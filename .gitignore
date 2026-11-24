@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+frontend/dist/
+backend/dist/
+
+# 本地环境与密钥
+.env
+.env.local
+.env.*.local
+
+# 数据库与本地内容数据（含所有者凭据，不入库）
+backend/data/
+backend/memory/
+backend/uploads/
+
+# 日志与系统文件
+*.log
+.DS_Store
+
+# Agent 工具缓存
+.omo/
+.codegraph
