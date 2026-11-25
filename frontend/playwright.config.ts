@@ -2,8 +2,6 @@ import { accessSync, constants, statSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
 
-const databasePath = `/tmp/linjian-frontend-e2e-${process.pid}.sqlite`
-
 function chromiumExecutable() {
   const override = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
   if (override) return override === 'bundled' ? undefined : override
@@ -24,15 +22,16 @@ const executablePath = chromiumExecutable()
 export default defineConfig({
   testDir: './e2e',
   workers: 1,
-  use: { baseURL: 'http://127.0.0.1:4187', trace: 'retain-on-failure', launchOptions: { executablePath } },
+  // Keep optional Google Fonts offline in tests without changing the production page.
+  use: { baseURL: 'http://127.0.0.1:4187', trace: 'retain-on-failure', launchOptions: { executablePath, args: ['--host-resolver-rules=MAP fonts.googleapis.com ~NOTFOUND, MAP fonts.gstatic.com ~NOTFOUND'] } },
   webServer: [
     {
-      command: `rm -f ${databasePath} && DATABASE_PATH=${databasePath} npm --prefix ../backend run db:init && DATABASE_PATH=${databasePath} OWNER_EMAIL=test@test.test OWNER_PASSWORD=test npm --prefix ../backend run owner:init && DATABASE_PATH=${databasePath} npm --prefix ../backend run db:seed && DATABASE_PATH=${databasePath} UPLOAD_DIR=memory OWNER_EMAIL=test@test.test OWNER_PASSWORD=test PORT=3000 FRONTEND_ORIGIN=http://127.0.0.1:4187 npm --prefix ../backend run dev`,
-      env: { AI_IMAGES_ENABLED: process.env.AI_IMAGES_LIVE_MODEL_ID ? 'true' : 'false', COOKIE_SECURE: 'false' },
+      command: 'node ./e2e-server.mjs backend',
       url: 'http://127.0.0.1:3000/api/health',
       reuseExistingServer: false,
+      gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
     },
-    { command: 'VITE_API_PROXY_TARGET=http://127.0.0.1:3000 npm run build && VITE_API_PROXY_TARGET=http://127.0.0.1:3000 npm run preview -- --host 127.0.0.1 --port 4187', port: 4187, reuseExistingServer: false },
+    { command: 'node ./e2e-server.mjs frontend', port: 4187, reuseExistingServer: false },
   ],
   projects: [
     { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },

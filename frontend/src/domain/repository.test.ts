@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, contentApi, fetchApi } from './repository'
+import { registerOwnerSessionInvalidation, advanceOwnerSessionEpoch } from '../workbench/owner-session-events'
+import { sessionApi } from '../workbench/session-api'
 
 describe('API 客户端', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -19,6 +21,40 @@ describe('API 客户端', () => {
   it('网络失败使用可操作的统一错误', async () => {
     vi.stubGlobal('fetch',vi.fn().mockRejectedValue(new TypeError('offline')))
     await expect(fetchApi('/api/health')).rejects.toEqual(new ApiError(0,'无法连接服务器，请检查网络后重试'))
+  })
+
+  it('忽略非字符串错误消息', async () => {
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{detail:'private'}}),{status:400})))
+    await expect(fetchApi('/api/public/articles')).rejects.toEqual(new ApiError(400,'请求失败（400）'))
+  })
+
+  it('公开、认证及普通请求的 401 不会使当前会话失效', async () => {
+    const invalidate=vi.fn()
+    const unregister=registerOwnerSessionInvalidation(invalidate)
+    try {
+      vi.stubGlobal('fetch',vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({error:'未登录'}),{status:401}))))
+      await Promise.all([
+        contentApi.publicArticles(), sessionApi.login('a','b'), sessionApi.session(), sessionApi.logout(),
+        fetchApi('/api/admin/articles'),
+      ].map(request=>expect(request).rejects.toMatchObject({status:401})))
+      expect(invalidate).not.toHaveBeenCalled()
+    } finally { unregister() }
+  })
+
+  it('管理请求在发起时捕获会话，仅当前会话的 401 使其失效', async () => {
+    const invalidate=vi.fn()
+    const unregister=registerOwnerSessionInvalidation(invalidate)
+    try {
+      let resolve!: (response: Response) => void
+      vi.stubGlobal('fetch',vi.fn().mockImplementationOnce(()=>new Promise<Response>(done=>{resolve=done})).mockImplementationOnce(()=>Promise.resolve(new Response('{}',{status:401}))))
+      const old=contentApi.categories()
+      advanceOwnerSessionEpoch()
+      resolve(new Response('{}',{status:401}))
+      await expect(old).rejects.toMatchObject({status:401})
+      expect(invalidate).not.toHaveBeenCalled()
+      await expect(contentApi.categories()).rejects.toMatchObject({status:401})
+      expect(invalidate).toHaveBeenCalledTimes(1)
+    } finally { unregister() }
   })
 
   it('将管理端五个读取请求的信号传给 fetch', async () => {

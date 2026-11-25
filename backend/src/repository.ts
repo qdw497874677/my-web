@@ -57,8 +57,47 @@ export class Repository {
   createPhoto(albumId:string,input:{title:string;caption?:string;image?:string;imageAssetId?:string;alt?:string}){this.required(this.get('SELECT id FROM albums WHERE id=?',albumId),'相册');const id=`photo-${randomUUID()}`,position=this.photoRows(albumId).length,assetId=this.assetId(input,'/assets/hero.png');this.db.prepare('INSERT INTO photos VALUES (?,?,?,?,?,?,?,?)').run(id,albumId,input.title,input.caption??'',assetId,input.alt??input.title,position,this.now());return this.photo(this.required(this.photoRows(albumId).find(row=>row.id===id),'照片'))}
   updatePhoto(id:string,input:{title?:string;caption?:string;image?:string;imageAssetId?:string;alt?:string}){const current=this.required(this.get('SELECT * FROM photos WHERE id=?',id),'照片'),assetId=input.imageAssetId||input.image?this.assetId(input):String(current.image_asset_id);this.db.prepare('UPDATE photos SET title=?,caption=?,image_asset_id=?,alt=? WHERE id=?').run(input.title??current.title as string,input.caption??current.caption as string,assetId,input.alt??current.alt as string,id);const row=this.all('SELECT p.*,x.kind asset_kind,x.url asset_url FROM photos p JOIN assets x ON x.id=p.image_asset_id WHERE p.id=?',id)[0];return this.photo(this.required(row,'照片'))}
   orderPhotos(albumId:string,ids:string[]){const current=this.photoRows(albumId).map(row=>String(row.id));this.assertCompleteOrder(ids,current);return this.transaction(()=>{this.db.prepare('UPDATE photos SET position=position+1000 WHERE album_id=?').run(albumId);ids.forEach((id,index)=>this.db.prepare('UPDATE photos SET position=? WHERE id=?').run(index,id));return this.getAlbum(albumId)})}
-  movePhoto(id:string,targetAlbumId:string,position?:number){return this.transaction(()=>{const photo=this.required(this.get('SELECT * FROM photos WHERE id=?',id),'照片'),sourceId=String(photo.album_id);this.required(this.get('SELECT id FROM albums WHERE id=?',targetAlbumId),'目标相册');const targetCount=this.photoRows(targetAlbumId).length,targetPosition=position??targetCount;if(!Number.isInteger(targetPosition)||targetPosition<0||targetPosition>targetCount)throw new DomainError(400,'移动位置超出范围');this.ensureCanLosePhoto(sourceId,id);const sourceIds=this.photoRows(sourceId).filter(row=>row.id!==id).map(row=>String(row.id)),targetIds=this.photoRows(targetAlbumId).filter(row=>row.id!==id).map(row=>String(row.id)),references=this.all("SELECT * FROM collections WHERE type='photo' AND photo_id=?",id);targetIds.splice(targetPosition,0,id);this.prepareCoverRemoval(sourceId,id);this.db.prepare("DELETE FROM collections WHERE type='photo' AND photo_id=?").run(id);this.db.prepare('UPDATE photos SET position=1000000000 WHERE id=?').run(id);this.db.prepare('UPDATE photos SET position=position+1000 WHERE album_id IN (?,?) AND id!=?').run(sourceId,targetAlbumId,id);this.db.prepare('UPDATE photos SET album_id=? WHERE id=?').run(targetAlbumId,id);sourceIds.forEach((photoId,index)=>this.db.prepare('UPDATE photos SET position=? WHERE id=?').run(index,photoId));targetIds.forEach((photoId,index)=>this.db.prepare('UPDATE photos SET position=? WHERE id=?').run(index,photoId));references.forEach(row=>this.db.prepare('INSERT INTO collections VALUES (?,?,?,?,?,?,?,?)').run(String(row.id),String(row.type),null,targetAlbumId,id,String(row.note),Number(row.visible),Number(row.position)));const row=this.all('SELECT p.*,x.kind asset_kind,x.url asset_url FROM photos p JOIN assets x ON x.id=p.image_asset_id WHERE p.id=?',id)[0];return this.photo(this.required(row,'照片'))})}
-  deletePhoto(id:string){return this.transaction(()=>{const photo=this.required(this.get('SELECT * FROM photos WHERE id=?',id),'照片'),albumId=String(photo.album_id);if(this.get("SELECT id FROM collections WHERE type='photo' AND photo_id=?",id))throw new DomainError(409,'照片仍被收藏引用');this.ensureCanLosePhoto(albumId,id);this.prepareCoverRemoval(albumId,id);this.db.prepare('DELETE FROM photos WHERE id=?').run(id);this.photoRows(albumId).forEach((row,index)=>this.db.prepare('UPDATE photos SET position=? WHERE id=?').run(index,String(row.id)))})}
+  movePhoto(id:string,targetAlbumId:string,position?:number){
+    return this.transaction(()=>{
+      const photo=this.required(this.get('SELECT * FROM photos WHERE id=?',id),'照片')
+      const sourceId=String(photo.album_id)
+      this.required(this.get('SELECT id FROM albums WHERE id=?',targetAlbumId),'目标相册')
+      const targetCount=this.photoRows(targetAlbumId).length
+      const targetPosition=position??targetCount
+      if(!Number.isInteger(targetPosition)||targetPosition<0||targetPosition>targetCount)throw new DomainError(400,'移动位置超出范围')
+      this.ensureCanLosePhoto(sourceId,id)
+
+      const sourceIds=this.photoRows(sourceId).filter(row=>row.id!==id).map(row=>String(row.id))
+      const targetIds=this.photoRows(targetAlbumId).filter(row=>row.id!==id).map(row=>String(row.id))
+      const references=this.all("SELECT * FROM collections WHERE type='photo' AND photo_id=?",id)
+      targetIds.splice(targetPosition,0,id)
+
+      this.prepareCoverRemoval(sourceId,id)
+      this.db.prepare("DELETE FROM collections WHERE type='photo' AND photo_id=?").run(id)
+      // Move positions out of the way before assigning the final order.
+      this.db.prepare('UPDATE photos SET position=1000000000 WHERE id=?').run(id)
+      this.db.prepare('UPDATE photos SET position=position+1000 WHERE album_id IN (?,?) AND id!=?').run(sourceId,targetAlbumId,id)
+      this.db.prepare('UPDATE photos SET album_id=? WHERE id=?').run(targetAlbumId,id)
+      sourceIds.forEach((photoId,index)=>this.db.prepare('UPDATE photos SET position=? WHERE id=?').run(index,photoId))
+      targetIds.forEach((photoId,index)=>this.db.prepare('UPDATE photos SET position=? WHERE id=?').run(index,photoId))
+      references.forEach(row=>this.db.prepare('INSERT INTO collections VALUES (?,?,?,?,?,?,?,?)').run(String(row.id),String(row.type),null,targetAlbumId,id,String(row.note),Number(row.visible),Number(row.position)))
+
+      const row=this.all('SELECT p.*,x.kind asset_kind,x.url asset_url FROM photos p JOIN assets x ON x.id=p.image_asset_id WHERE p.id=?',id)[0]
+      return this.photo(this.required(row,'照片'))
+    })
+  }
+  deletePhoto(id:string){
+    return this.transaction(()=>{
+      const photo=this.required(this.get('SELECT * FROM photos WHERE id=?',id),'照片')
+      const albumId=String(photo.album_id)
+      if(this.get("SELECT id FROM collections WHERE type='photo' AND photo_id=?",id))throw new DomainError(409,'照片仍被收藏引用')
+      this.ensureCanLosePhoto(albumId,id)
+
+      this.prepareCoverRemoval(albumId,id)
+      this.db.prepare('DELETE FROM photos WHERE id=?').run(id)
+      this.photoRows(albumId).forEach((row,index)=>this.db.prepare('UPDATE photos SET position=? WHERE id=?').run(index,String(row.id)))
+    })
+  }
   private ensureCanLosePhoto(albumId:string,photoId:string){const album=this.required(this.get('SELECT is_private,archived_at FROM albums WHERE id=?',albumId),'相册'),count=this.photoRows(albumId).length;if(!album.is_private&&!album.archived_at&&count<=1)throw new DomainError(409,'操作不能使公开相册为空');if(!this.get('SELECT id FROM photos WHERE id=? AND album_id=?',photoId,albumId))throw new DomainError(400,'照片不属于相册')}
   private prepareCoverRemoval(albumId:string,removedId:string){const album=this.get('SELECT cover_photo_id FROM albums WHERE id=?',albumId);if(album?.cover_photo_id===removedId){const replacement=this.get('SELECT id FROM photos WHERE album_id=? AND id<>? ORDER BY position LIMIT 1',albumId,removedId);this.db.prepare('UPDATE albums SET cover_photo_id=? WHERE id=?').run(replacement?.id as string??null,albumId)}}
 

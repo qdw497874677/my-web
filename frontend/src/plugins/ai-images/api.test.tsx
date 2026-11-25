@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { generateImage, useImageGenerationCatalog } from './api'
+import { advanceOwnerSessionEpoch, registerOwnerSessionInvalidation } from '../../workbench/owner-session-events'
 
 const catalog = {
   enabled: true,
@@ -130,5 +131,26 @@ describe('generateImage', () => {
     controller.abort()
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(aborted))
     await expect(generateImage(input, controller.signal)).rejects.toBe(aborted)
+  })
+
+  it('only invalidates the current, non-aborted admin request', async () => {
+    const invalidate = vi.fn()
+    const unregister = registerOwnerSessionInvalidation(invalidate)
+    try {
+      let resolve!: (response: Response) => void
+      vi.stubGlobal('fetch', vi.fn().mockImplementationOnce(() => new Promise<Response>(done => { resolve = done }))
+        .mockImplementation(() => Promise.resolve(json({ error: '未登录' }, 401))))
+      const old = generateImage(input)
+      advanceOwnerSessionEpoch()
+      resolve(json({ error: '未登录' }, 401))
+      await expect(old).rejects.toThrow('未登录')
+      expect(invalidate).not.toHaveBeenCalled()
+      const controller = new AbortController()
+      controller.abort()
+      await expect(generateImage(input, controller.signal)).rejects.toThrow('未登录')
+      expect(invalidate).not.toHaveBeenCalled()
+      await expect(generateImage(input)).rejects.toThrow('未登录')
+      expect(invalidate).toHaveBeenCalledTimes(1)
+    } finally { unregister() }
   })
 })

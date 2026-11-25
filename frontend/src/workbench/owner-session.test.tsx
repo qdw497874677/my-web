@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { OwnerSessionProvider, RequireOwner } from "./OwnerSessionProvider";
 import { useOwnerSession } from "./owner-session";
-import { fetchApi } from "../shared/http";
+import { fetchAdminApi } from "./admin-http";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -20,7 +20,7 @@ function Controls() {
     <span data-testid="logout-error">{logoutError}</span>
     <button onClick={() => { void login("a", "b").catch(() => {}); }}>login</button>
     <button onClick={() => { void logout(); }}>logout</button>
-    <button onClick={() => { void fetchApi("/api/admin/articles").catch(() => {}); }}>admin request</button>
+    <button onClick={() => { void fetchAdminApi("/api/admin/articles").catch(() => {}); }}>admin request</button>
   </>;
 }
 function App({ initial = "/admin/one" }: { initial?: string }) {

@@ -7,7 +7,7 @@ Node.js 24、TypeScript、Fastify 与内置 `node:sqlite` 实现的单进程后�
 应用启动只打开并迁移数据库，不自动创建所有者，也不自动导入演示内容。
 
 ```bash
-npm install
+npm ci
 cp .env.example .env
 npm run db:init
 npm run owner:init
@@ -17,7 +17,7 @@ npm run dev
 
 `owner:init` 要求 `OWNER_EMAIL` 和 `OWNER_PASSWORD`。应用运行时只检查数据库中是否已经存在唯一所有者，不要求长期保留密码环境变量；非 `test` 环境数据库没有所有者时会拒绝启动并提示执行 `owner:init`。`test@test.test / test` 不再是运行时默认值。`npm run dev` 和 `npm start` 会读取本目录下的 `.env`（若存在），进程环境变量优先。生产环境 Cookie 默认启用 `Secure`，本地 HTTP 开发可显式设置 `COOKIE_SECURE=false`。
 
-如前端 E2E 需要演示内容，应在测试启动脚本中先执行 `npm run db:init && npm run owner:init && npm run db:seed`。也可由测试代码调用 `buildApp({ seed: true, initializeOwner: ... })`；普通服务启动不会读取 `SEED_ON_START` 自动写数据，避免误污染生产库。
+需要演示内容时，显式执行 `npm run db:seed`。集成测试也可通过 `buildApp({ seed: true, initializeOwner: ... })` 在独立数据库中准备数据；服务启动不再支持 `SEED_ON_START`。
 
 ## API
 
@@ -78,6 +78,7 @@ npm run data -- restore /backups/linjian-2026-11-25 /srv/linjian-restore
 - `npm run build`
 - `npm run typecheck`
 - `npm run lint`
+- `npm run format:check`（检查格式）；`npm run format`（写入格式）
 - `npm test`
 - `npm start`
 - `npm run db:init`

@@ -46,19 +46,64 @@ export async function buildApp(options:AppOptions={}):Promise<App>{
       throw new Error('AI 生图要求 FRONTEND_ORIGIN 是完整的 HTTP(S) 源，不带末尾斜杠')
     }
   }
-  const clock=options.nowProvider??(()=>new Date()),db=openDatabase(options.databasePath??process.env.DATABASE_PATH??'./data/linjian.sqlite')
-  try{if(options.initializeOwner)await initializeOwner(db,options.initializeOwner.email,options.initializeOwner.password,clock());if(options.seed)seedContent(db,clock())}catch(error){db.close();throw error}
-  if(nodeEnv!=='test'&&!hasOwner(db)){db.close();throw new Error('数据库尚未初始化所有者，请先运行 owner:init')}
-  const repository=new Repository(db,clock),storage=options.storage??(options.uploadDir==='memory'?new MemoryStorage():new LocalStorage(options.uploadDir??process.env.UPLOAD_DIR??'./uploads')),dummyPasswordHash=await hashPassword('linjian-invalid-login-password')
-  const app=Fastify({logger:false}),limitOptions=options.rateLimit===false?null:{loginMax:options.rateLimit?.loginMax??6,subscriptionMax:options.rateLimit?.subscriptionMax??10,timeWindow:options.rateLimit?.timeWindow??15*60*1000}
-  await app.register(cookie);await app.register(cors,{origin:frontendOrigin,credentials:true});await app.register(multipart,{limits:{fileSize:10*1024*1024,files:1}});if(limitOptions)await app.register(rateLimit,{global:false,max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,cache:5000})
+  const clock=options.nowProvider??(()=>new Date())
+  const db=openDatabase(options.databasePath??process.env.DATABASE_PATH??'./data/linjian.sqlite')
+  try{
+    if(options.initializeOwner)await initializeOwner(db,options.initializeOwner.email,options.initializeOwner.password,clock())
+    if(options.seed)seedContent(db,clock())
+  }catch(error){
+    db.close()
+    throw error
+  }
+  if(nodeEnv!=='test'&&!hasOwner(db)){
+    db.close()
+    throw new Error('数据库尚未初始化所有者，请先运行 owner:init')
+  }
+  const repository=new Repository(db,clock)
+  const storage=options.storage??(options.uploadDir==='memory'?new MemoryStorage():new LocalStorage(options.uploadDir??process.env.UPLOAD_DIR??'./uploads'))
+  const dummyPasswordHash=await hashPassword('linjian-invalid-login-password')
+  const app=Fastify({logger:false})
+  const limitOptions=options.rateLimit===false?null:{
+    loginMax:options.rateLimit?.loginMax??6,
+    subscriptionMax:options.rateLimit?.subscriptionMax??10,
+    timeWindow:options.rateLimit?.timeWindow??15*60*1000
+  }
+  await app.register(cookie)
+  await app.register(cors,{origin:frontendOrigin,credentials:true})
+  await app.register(multipart,{limits:{fileSize:10*1024*1024,files:1}})
+  if(limitOptions)await app.register(rateLimit,{global:false,max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,cache:5000})
   app.addHook('onClose',async()=>repository.close())
-  app.setErrorHandler((error,_request,reply)=>{if(error instanceof DomainError)return reply.code(error.statusCode).send({error:error.message});if((error as{validation?:unknown}).validation)return reply.code(400).send({error:'请求格式无效'});if((error as{code?:string}).code?.startsWith('SQLITE_CONSTRAINT'))return reply.code(409).send({error:'数据约束冲突'});const httpError=error as{statusCode?:number;message?:string},statusCode=httpError.statusCode;if(statusCode&&statusCode>=400&&statusCode<500)return reply.code(statusCode).send({error:httpError.message??'请求失败'});app.log.error(error);return reply.code(500).send({error:'服务器内部错误'})})
+  app.setErrorHandler((error,_request,reply)=>{
+    if(error instanceof DomainError)return reply.code(error.statusCode).send({error:error.message})
+    if((error as{validation?:unknown}).validation)return reply.code(400).send({error:'请求格式无效'})
+    if((error as{code?:string}).code?.startsWith('SQLITE_CONSTRAINT'))return reply.code(409).send({error:'数据约束冲突'})
+    const httpError=error as{statusCode?:number;message?:string}
+    const statusCode=httpError.statusCode
+    if(statusCode&&statusCode>=400&&statusCode<500)return reply.code(statusCode).send({error:httpError.message??'请求失败'})
+    app.log.error(error)
+    return reply.code(500).send({error:'服务器内部错误'})
+  })
   const requireOwner=async(request:FastifyRequest,reply:FastifyReply)=>{const id=request.cookies.linjian_session;if(!id||!repository.ownerBySession(id))return reply.code(401).send({error:'需要刊物所有者会话'})}
   const mediaHeaders=async(_request:FastifyRequest,reply:FastifyReply)=>{reply.header('Cache-Control','no-store').header('X-Content-Type-Options','nosniff')}
   const serveImage=async(asset:Record<string,unknown>,reply:FastifyReply)=>{if(asset.kind==='external')return reply.redirect(String(asset.url),302);let data:Buffer;try{data=await readBounded(storage.read(String(asset.path)))}catch{throw new DomainError(404,'图片资产不存在')}const type=rasterType(data);if(!type||type!==asset.media_type)throw new DomainError(404,'图片资产不存在');return reply.type(type).send(data)}
   app.get('/api/health',async()=>({status:'ok',service:'linjian-backend'}))
-  app.post('/api/auth/login',{config:{rateLimit:limitOptions?{max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,keyGenerator:(request:FastifyRequest)=>request.ip}:false}},async(request,reply)=>{const value=objectBody(request),email=stringField(value.email,'email')!.trim().toLowerCase(),password=stringField(value.password,'password')!,timestamp=clock().getTime(),owner=repository.ownerByEmail(email),passwordMatches=await verifyPassword(password,owner?String(owner.password_hash):dummyPasswordHash);if(!owner||!passwordMatches)throw new DomainError(401,'邮箱或密码不正确');const expires=new Date(timestamp+(options.sessionTtlDays??Number(process.env.SESSION_TTL_DAYS??30))*86400000),id=repository.createSession(String(owner.id),expires.toISOString()),secure=options.cookieSecure??(process.env.COOKIE_SECURE?process.env.COOKIE_SECURE==='true':nodeEnv==='production');reply.setCookie('linjian_session',id,{httpOnly:true,sameSite:'lax',secure,path:'/',expires});return{authenticated:true,owner:{id:owner.id,email:owner.email}}})
+  app.post('/api/auth/login',{
+    config:{rateLimit:limitOptions?{max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,keyGenerator:(request:FastifyRequest)=>request.ip}:false}
+  },async(request,reply)=>{
+    const value=objectBody(request)
+    const email=stringField(value.email,'email')!.trim().toLowerCase()
+    const password=stringField(value.password,'password')!
+    const timestamp=clock().getTime()
+    const owner=repository.ownerByEmail(email)
+    const passwordMatches=await verifyPassword(password,owner?String(owner.password_hash):dummyPasswordHash)
+    if(!owner||!passwordMatches)throw new DomainError(401,'邮箱或密码不正确')
+
+    const expires=new Date(timestamp+(options.sessionTtlDays??Number(process.env.SESSION_TTL_DAYS??30))*86400000)
+    const id=repository.createSession(String(owner.id),expires.toISOString())
+    const secure=options.cookieSecure??(process.env.COOKIE_SECURE?process.env.COOKIE_SECURE==='true':nodeEnv==='production')
+    reply.setCookie('linjian_session',id,{httpOnly:true,sameSite:'lax',secure,path:'/',expires})
+    return{authenticated:true,owner:{id:owner.id,email:owner.email}}
+  })
   app.post('/api/auth/logout',async(request,reply)=>{if(request.cookies.linjian_session)repository.deleteSession(request.cookies.linjian_session);reply.clearCookie('linjian_session',{path:'/'}).code(204).send()});app.get('/api/auth/session',async request=>{const owner=request.cookies.linjian_session?repository.ownerBySession(request.cookies.linjian_session):undefined;return owner?{authenticated:true,owner}:{authenticated:false}})
   app.register(async admin=>{admin.addHook('preHandler',requireOwner)
     await admin.register(aiImagesPlugin, { prefix: '/ai-images', ...aiImages, trustedOrigin: frontendOrigin })

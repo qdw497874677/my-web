@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { captureOwnerSessionInvalidation } from "../../workbench/owner-session-events";
+import { captureAdminUnauthorized } from "../../workbench/admin-http";
 
 export interface ImageTemplate {
   id: string;
@@ -47,7 +47,7 @@ function parseCatalog(value: unknown): ImageGenerationCatalog {
 }
 
 async function request(path: string, init: RequestInit): Promise<Response> {
-  const invalidateSession = captureOwnerSessionInvalidation();
+  const invalidateSession = captureAdminUnauthorized();
   let response: Response;
   try {
     response = await fetch(path, { ...init, credentials: "include" });

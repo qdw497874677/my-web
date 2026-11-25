@@ -11,11 +11,11 @@
 
 ## 初始化后端
 
-需要 Node.js 24 或更高版本。
+需要 Node.js 24 或更高版本。CI 使用 [`.node-version`](.node-version) 固定的版本和 npm 11.19.1。
 
 ```bash
 cd backend
-npm install
+npm ci
 cp .env.example .env
 npm run db:init
 npm run owner:init
@@ -29,7 +29,7 @@ npm run dev
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -48,9 +48,12 @@ Vite 会输出本地预览地址，默认通常为 `http://localhost:5173`。
 ```bash
 npm run typecheck
 npm run lint
+npm run format:check
 npm test
 npm run build
 ```
+
+两端均使用 Oxfmt。修改后可用各自的 `npm run format` 写入格式；大范围的纯格式修改应与行为修改分开提交。前端常规类型检查也覆盖 Playwright 配置和 E2E 源码。
 
 浏览器端到端测试在 `frontend/` 执行：
 
@@ -58,7 +61,7 @@ npm run build
 npm run test:e2e
 ```
 
-测试优先使用 `PATH` 中的本机 Chromium，找不到才使用 Playwright 自带的版本（可用 `npx playwright install chromium` 安装）。可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium` 指定路径，或设为 `bundled` 强制使用 Playwright 版本。
+测试使用独立的临时数据库和测试账号，不读写日常刊物数据。测试优先使用 `PATH` 中的本机 Chromium，找不到才使用 Playwright 自带的版本（可用 `npx playwright install chromium` 安装）。可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium` 指定路径，或设为 `bundled` 强制使用 Playwright 版本；CI 使用后者。普通回归不启用真实生图供应商。
 
 若 Linux 的 `/tmp` 配额不足，可用 `TMPDIR=/dev/shm npm run test:e2e` 将浏览器临时文件放到 `/dev/shm`。
 
