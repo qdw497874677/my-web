@@ -8,13 +8,13 @@ import type { Album } from "../domain/types";
 import { Loading } from "./PublicLoading";
 
 export function ArticlesPage() {
-  const { publicArticles: articles, publicStatus: { articles: status } } = useContent();
+  const {
+    publicArticles: articles,
+    publicStatus: { articles: status },
+  } = useContent();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
-  const categories = [
-    "全部",
-    ...new Set(articles.map((article) => article.category)),
-  ];
+  const categories = ["全部", ...new Set(articles.map((article) => article.category))];
   const filtered = articles.filter(
     (article) =>
       (category === "全部" || article.category === category) &&
@@ -60,11 +60,7 @@ export function ArticlesPage() {
               </p>
               <div className="articleList">
                 {filtered.map((article) => (
-                  <Link
-                    className="listItem"
-                    key={article.id}
-                    to={`/articles/${article.slug}`}
-                  >
+                  <Link className="listItem" key={article.id} to={`/articles/${article.slug}`}>
                     <img src={article.image} alt={article.alt} />
                     <div>
                       <span className="meta">
@@ -78,9 +74,7 @@ export function ArticlesPage() {
                     </span>
                   </Link>
                 ))}
-                {filtered.length === 0 && (
-                  <p>没有找到匹配的文章。换一个关键词或栏目试试。</p>
-                )}
+                {filtered.length === 0 && <p>没有找到匹配的文章。换一个关键词或栏目试试。</p>}
               </div>
             </>
           ) : null}
@@ -92,18 +86,16 @@ export function ArticlesPage() {
 }
 
 export function AlbumsPage() {
-  const { publicAlbums: albums, publicStatus: { albums: status } } = useContent();
+  const {
+    publicAlbums: albums,
+    publicStatus: { albums: status },
+  } = useContent();
   const [category, setCategory] = useState("全部");
   const [open, setOpen] = useState<Album | null>(null);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [zoomed, setZoomed] = useState(false);
-  const categories = [
-    "全部",
-    ...new Set(albums.map((album) => album.category)),
-  ];
-  const visible = albums.filter(
-    (album) => category === "全部" || album.category === category,
-  );
+  const categories = ["全部", ...new Set(albums.map((album) => album.category))];
+  const visible = albums.filter((album) => category === "全部" || album.category === category);
   const currentPhoto = open?.photos[photoIndex];
   const closeAlbum = () => {
     setOpen(null);
@@ -111,9 +103,7 @@ export function AlbumsPage() {
   };
   const move = (offset: number) => {
     if (!open) return;
-    setPhotoIndex(
-      (index) => (index + offset + open.photos.length) % open.photos.length,
-    );
+    setPhotoIndex((index) => (index + offset + open.photos.length) % open.photos.length);
     setZoomed(false);
   };
   useEffect(() => {
@@ -124,9 +114,7 @@ export function AlbumsPage() {
         setZoomed(false);
       }
       if (event.key === "ArrowLeft") {
-        setPhotoIndex(
-          (index) => (index - 1 + open.photos.length) % open.photos.length,
-        );
+        setPhotoIndex((index) => (index - 1 + open.photos.length) % open.photos.length);
         setZoomed(false);
       }
       if (event.key === "ArrowRight") {
@@ -187,9 +175,7 @@ export function AlbumsPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="lightbox-title"
-          onMouseDown={(event) =>
-            event.target === event.currentTarget && closeAlbum()
-          }
+          onMouseDown={(event) => event.target === event.currentTarget && closeAlbum()}
         >
           <div className="lightboxPanel photoLightbox">
             <div className="lightboxControls">

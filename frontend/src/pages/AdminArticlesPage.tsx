@@ -8,8 +8,7 @@ import { ArticleDialog } from "./AdminDialogs";
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请稍后重试。";
 export function AdminArticlesPage() {
-  const { adminArticles, categories, images, createArticle, archiveArticle } =
-    useContent();
+  const { adminArticles, categories, images, createArticle, archiveArticle } = useContent();
   const [query, setQuery] = useState(""),
     [status, setStatus] = useState("all"),
     [createOpen, setCreateOpen] = useState(false),
@@ -30,11 +29,7 @@ export function AdminArticlesPage() {
   );
   const create = async () => {
     try {
-      await createArticle(
-        title || "未命名文章",
-        categoryId,
-        imageAssetId || undefined,
-      );
+      await createArticle(title || "未命名文章", categoryId, imageAssetId || undefined);
       setCreateOpen(false);
       setTitle("");
     } catch (reason) {
@@ -100,19 +95,15 @@ export function AdminArticlesPage() {
                 <td>{article.readingMinutes || "—"} 分钟</td>
                 <td>
                   <div className="rowActions">
-                    <button
-                      className="ghost"
-                      onClick={() => setEditing(article)}
-                    >
+                    <button className="ghost" onClick={() => setEditing(article)}>
                       编辑
                     </button>
                     <button
                       className="ghost"
                       onClick={() =>
-                        void archiveArticle(
-                          article.id,
-                          !article.archived,
-                        ).catch((reason) => setError(errorMessage(reason)))
+                        void archiveArticle(article.id, !article.archived).catch((reason) =>
+                          setError(errorMessage(reason)),
+                        )
                       }
                     >
                       {article.archived ? "恢复" : "归档"}
@@ -167,19 +158,12 @@ export function AdminArticlesPage() {
               ))}
             </SelectField>
             {images.length === 0 && (
-              <p className="meta">
-                当前没有可选图片资产，将由后端使用内置默认资产。
-              </p>
+              <p className="meta">当前没有可选图片资产，将由后端使用内置默认资产。</p>
             )}
           </div>
         </Dialog>
       )}
-      {editing && (
-        <ArticleDialog
-          article={editing}
-          onClose={() => setEditing(undefined)}
-        />
-      )}
+      {editing && <ArticleDialog article={editing} onClose={() => setEditing(undefined)} />}
     </>
   );
 }

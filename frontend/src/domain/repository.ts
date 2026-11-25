@@ -92,7 +92,9 @@ export const contentApi = {
   deleteCategory: (id: string) =>
     fetchAdminApi<void>(`/api/admin/categories/${id}`, { method: "DELETE" }),
   articles: async (signal?: AbortSignal) =>
-    (await fetchAdminApi<{ items: Article[] }>("/api/admin/articles", { signal })).items.map(adminArticle),
+    (await fetchAdminApi<{ items: Article[] }>("/api/admin/articles", { signal })).items.map(
+      adminArticle,
+    ),
   createArticle: (title: string, categoryId: string, imageAssetId?: string) =>
     fetchAdminApi<Article>("/api/admin/articles", {
       method: "POST",
@@ -110,12 +112,13 @@ export const contentApi = {
       body: json(input),
     }).then(adminArticle),
   archiveArticle: (id: string, archived: boolean) =>
-    fetchAdminApi<Article>(
-      `/api/admin/articles/${id}/${archived ? "archive" : "restore"}`,
-      { method: "POST" },
-    ).then(adminArticle),
+    fetchAdminApi<Article>(`/api/admin/articles/${id}/${archived ? "archive" : "restore"}`, {
+      method: "POST",
+    }).then(adminArticle),
   albums: async (signal?: AbortSignal) =>
-    (await fetchAdminApi<{ items: Album[] }>("/api/admin/albums", { signal })).items.map(adminAlbum),
+    (await fetchAdminApi<{ items: Album[] }>("/api/admin/albums", { signal })).items.map(
+      adminAlbum,
+    ),
   createAlbum: (title: string, categoryId: string) =>
     fetchAdminApi<Album>("/api/admin/albums", {
       method: "POST",
@@ -132,10 +135,9 @@ export const contentApi = {
       body: json(input),
     }).then(adminAlbum),
   archiveAlbum: (id: string, archived: boolean) =>
-    fetchAdminApi<Album>(
-      `/api/admin/albums/${id}/${archived ? "archive" : "restore"}`,
-      { method: "POST" },
-    ).then(adminAlbum),
+    fetchAdminApi<Album>(`/api/admin/albums/${id}/${archived ? "archive" : "restore"}`, {
+      method: "POST",
+    }).then(adminAlbum),
   createPhoto: (albumId: string, input: PhotoInput) =>
     fetchAdminApi<Photo>(`/api/admin/albums/${albumId}/photos`, {
       method: "POST",
@@ -146,8 +148,7 @@ export const contentApi = {
       method: "PATCH",
       body: json(input),
     }).then(adminPhoto),
-  deletePhoto: (id: string) =>
-    fetchAdminApi<void>(`/api/admin/photos/${id}`, { method: "DELETE" }),
+  deletePhoto: (id: string) => fetchAdminApi<void>(`/api/admin/photos/${id}`, { method: "DELETE" }),
   orderPhotos: (albumId: string, ids: string[]) =>
     fetchAdminApi<Album>(`/api/admin/albums/${albumId}/photos/order`, {
       method: "PUT",
@@ -162,10 +163,7 @@ export const contentApi = {
     const result = await fetchAdminApi<CollectionCatalog>("/api/admin/collections", { signal });
     return adminCatalog(result);
   },
-  saveCollections: (
-    items: CollectionReference[],
-    presentation: CollectionPresentation,
-  ) =>
+  saveCollections: (items: CollectionReference[], presentation: CollectionPresentation) =>
     fetchAdminApi<CollectionCatalog>("/api/admin/collections", {
       method: "PUT",
       body: json({ items, presentation }),
@@ -177,11 +175,11 @@ export const contentApi = {
   uploadImage: (file: File) => {
     const body = new FormData();
     body.set("file", file);
-    return fetchAdminApi<ImageAsset>("/api/admin/images", { method: "POST", body }).then(adminAsset);
+    return fetchAdminApi<ImageAsset>("/api/admin/images", { method: "POST", body }).then(
+      adminAsset,
+    );
   },
-  deleteImage: (id: string) =>
-    fetchAdminApi<void>(`/api/admin/images/${id}`, { method: "DELETE" }),
+  deleteImage: (id: string) => fetchAdminApi<void>(`/api/admin/images/${id}`, { method: "DELETE" }),
 };
 export const getAlbumCover = (album: Album) =>
-  album.photos.find((photo) => photo.id === album.coverPhotoId) ??
-  album.photos[0];
+  album.photos.find((photo) => photo.id === album.coverPhotoId) ?? album.photos[0];

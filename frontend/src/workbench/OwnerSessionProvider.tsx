@@ -35,9 +35,16 @@ export function OwnerSessionProvider({ children }: { children?: ReactNode }) {
   }, []);
 
   useLayoutEffect(() => registerOwnerSessionInvalidation(expire), [expire]);
-  useEffect(() => () => { generation.current++; }, []);
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
 
-  const validate = useCallback(async (): Promise<"authenticated" | "unauthenticated" | "error" | "obsolete"> => {
+  const validate = useCallback(async (): Promise<
+    "authenticated" | "unauthenticated" | "error" | "obsolete"
+  > => {
     if (loginRequired.current || logoutPending.current) {
       setStatus("unauthenticated");
       return "unauthenticated";
@@ -67,7 +74,9 @@ export function OwnerSessionProvider({ children }: { children?: ReactNode }) {
     }
   }, [expire]);
 
-  const cancelValidation = useCallback(() => { generation.current++; }, []);
+  const cancelValidation = useCallback(() => {
+    generation.current++;
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     if (logoutPending.current) throw new Error("退出登录尚未完成，请稍后重试");
@@ -111,7 +120,9 @@ export function OwnerSessionProvider({ children }: { children?: ReactNode }) {
   }, [expire]);
 
   return (
-    <OwnerSessionContext.Provider value={{ owner, login, logout, logoutError, status, validate, cancelValidation }}>
+    <OwnerSessionContext.Provider
+      value={{ owner, login, logout, logoutError, status, validate, cancelValidation }}
+    >
       {children ?? <Outlet />}
     </OwnerSessionContext.Provider>
   );
@@ -138,11 +149,22 @@ export function RequireOwner() {
   }, [validate]);
   useLayoutEffect(() => {
     check();
-    return () => { request.current++; cancelValidation(); };
+    return () => {
+      request.current++;
+      cancelValidation();
+    };
   }, [location.key, location.pathname, location.search, location.hash, check, cancelValidation]);
 
   if (!owner && status === "unauthenticated") return <Navigate to="/admin/login" replace />;
   if (owner && guardStatus === "confirmed") return <Outlet />;
-  if (guardStatus === "error") return <div role="alert">无法验证登录状态。<button type="button" onClick={check}>重试</button></div>;
+  if (guardStatus === "error")
+    return (
+      <div role="alert">
+        无法验证登录状态。
+        <button type="button" onClick={check}>
+          重试
+        </button>
+      </div>
+    );
   return <div role="status">正在验证登录状态…</div>;
 }

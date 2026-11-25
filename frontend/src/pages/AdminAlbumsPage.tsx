@@ -20,9 +20,7 @@ export function AdminAlbumsPage() {
   useEffect(() => {
     if (!categoryId && categories[0]) setCategoryId(categories[0].id);
   }, [categories, categoryId]);
-  const albums = adminAlbums.filter(
-    (album) => category === "全部" || album.category === category,
-  );
+  const albums = adminAlbums.filter((album) => category === "全部" || album.category === category);
   const create = async () => {
     try {
       await createAlbum(title || "未命名相册", categoryId);
@@ -59,11 +57,7 @@ export function AdminAlbumsPage() {
         {albums.map((album) => {
           const cover = getAlbumCover(album);
           return (
-            <article
-              className="adminAlbum"
-              data-album-id={album.id}
-              key={album.id}
-            >
+            <article className="adminAlbum" data-album-id={album.id} key={album.id}>
               {cover ? (
                 <img src={cover.image} alt={cover.alt} />
               ) : (
@@ -84,8 +78,8 @@ export function AdminAlbumsPage() {
                   <button
                     className="ghost"
                     onClick={() =>
-                      void archiveAlbum(album.id, !album.archived).catch(
-                        (reason) => setError(errorMessage(reason)),
+                      void archiveAlbum(album.id, !album.archived).catch((reason) =>
+                        setError(errorMessage(reason)),
                       )
                     }
                   >
@@ -131,9 +125,7 @@ export function AdminAlbumsPage() {
         </Dialog>
       )}
       {imagesOpen && <ImagesDialog onClose={() => setImagesOpen(false)} />}{" "}
-      {editing && (
-        <AlbumDialog album={editing} onClose={() => setEditing(undefined)} />
-      )}
+      {editing && <AlbumDialog album={editing} onClose={() => setEditing(undefined)} />}
     </>
   );
 }

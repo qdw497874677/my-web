@@ -6,12 +6,7 @@ import { useContent } from "../domain/useContent";
 import { Loading } from "./PublicLoading";
 
 export function HomePage() {
-  const {
-    publicArticles,
-    publicAlbums,
-    publicStatus,
-    subscribe,
-  } = useContent();
+  const { publicArticles, publicAlbums, publicStatus, subscribe } = useContent();
   const articles = publicArticles.slice(0, 3);
   const album = publicAlbums[0];
   const albumCover = album ? getAlbumCover(album) : undefined;
@@ -28,9 +23,7 @@ export function HomePage() {
       setMessage("邮箱已经记下。有新东西时，再写信给你。");
       form.reset();
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "订阅失败，请稍后重试。",
-      );
+      setMessage(error instanceof Error ? error.message : "订阅失败，请稍后重试。");
     } finally {
       setSubmitting(false);
     }
@@ -57,17 +50,18 @@ export function HomePage() {
             </div>
           </div>
           <figure className="heroArt">
-            <img
-              src="/assets/hero.png"
-              alt="暖色纸张与植物形状构成的刊物封面拼贴"
-            />
+            <img src="/assets/hero.png" alt="暖色纸张与植物形状构成的刊物封面拼贴" />
           </figure>
         </section>
         <section className="section container">
           <SectionRule
             index="Ⅱ."
             title="最近写下"
-            meta={!publicStatus.articles.loading && !publicStatus.articles.error ? `${articles.length} 篇文章` : ""}
+            meta={
+              !publicStatus.articles.loading && !publicStatus.articles.error
+                ? `${articles.length} 篇文章`
+                : ""
+            }
           />
           <div className="sectionHead">
             <MixedHeadline as="h2">
@@ -91,22 +85,20 @@ export function HomePage() {
         {(publicStatus.albums.loading || publicStatus.albums.error) && (
           <section className="section container">
             <SectionRule index="Ⅲ." title="最近整理" meta="" />
-            {publicStatus.albums.loading ? <Loading /> : <p className="error">{publicStatus.albums.error}</p>}
+            {publicStatus.albums.loading ? (
+              <Loading />
+            ) : (
+              <p className="error">{publicStatus.albums.error}</p>
+            )}
           </section>
         )}
         {!publicStatus.albums.loading && !publicStatus.albums.error && album && albumCover && (
           <section className="section container">
-            <SectionRule
-              index="Ⅲ."
-              title="最近整理"
-              meta={`${album.location} / ${album.date}`}
-            />
+            <SectionRule index="Ⅲ." title="最近整理" meta={`${album.location} / ${album.date}`} />
             <article className="albumFeature">
               <img src={albumCover.image} alt={albumCover.alt} />
               <div className="albumCopy">
-                <span className="meta">
-                  相册 / {album.photos.length} 张照片
-                </span>
+                <span className="meta">相册 / {album.photos.length} 张照片</span>
                 <MixedHeadline as="h2">{album.title}</MixedHeadline>
                 <p>{album.description}</p>
                 <Link className="textLink" to="/albums">
@@ -127,10 +119,7 @@ export function HomePage() {
             </p>
           </div>
           <figure className="aboutArt">
-            <img
-              src="/assets/about.png"
-              alt="由纸张、线条和人物剪影组成的编辑拼贴"
-            />
+            <img src="/assets/about.png" alt="由纸张、线条和人物剪影组成的编辑拼贴" />
           </figure>
         </section>
         <section className="container newsletter">
@@ -138,9 +127,7 @@ export function HomePage() {
           <MixedHeadline as="h2">
             有新东西时，寄来一封<em>近况</em>
           </MixedHeadline>
-          <p>
-            可能是一篇新文章、几张刚整理好的照片，或最近反复读的一本书。不会太频繁。
-          </p>
+          <p>可能是一篇新文章、几张刚整理好的照片，或最近反复读的一本书。不会太频繁。</p>
           <form className="subscribe" onSubmit={(event) => void submit(event)}>
             <label className="sr-only" htmlFor="subscription-email">
               订阅邮箱

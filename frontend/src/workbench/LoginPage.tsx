@@ -39,9 +39,7 @@ export function LoginPage() {
           <MixedHeadline as="h2">
             回到文字与影像的<em>工作台</em>
           </MixedHeadline>
-          <p className="lead">
-            编辑、编排并发布林间刊物的文章与相册。这里仅向刊物所有者开放。
-          </p>
+          <p className="lead">编辑、编排并发布林间刊物的文章与相册。这里仅向刊物所有者开放。</p>
         </div>
       </section>
       <section className="loginPanel">
@@ -70,7 +68,9 @@ export function LoginPage() {
               {submitting ? "正在登录..." : "进入工作台"}
             </Button>
             {logoutError && (
-              <p className="error" role="alert">退出登录状态未确认，请重新登录。</p>
+              <p className="error" role="alert">
+                退出登录状态未确认，请重新登录。
+              </p>
             )}
             <p className="error" aria-live="polite">
               {error}

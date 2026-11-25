@@ -23,7 +23,9 @@ function AlbumDetail({ id }: { id: string | undefined }) {
     setError("");
     void contentApi
       .publicAlbum(id, controller.signal)
-      .then((result) => { if (!controller.signal.aborted) setAlbum(result); })
+      .then((result) => {
+        if (!controller.signal.aborted) setAlbum(result);
+      })
       .catch((reason) => {
         if (!controller.signal.aborted)
           setError(reason instanceof Error ? reason.message : "相册加载失败");

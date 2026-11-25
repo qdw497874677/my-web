@@ -49,13 +49,7 @@ function CollectionPresentationPanel({
             type="checkbox"
             checked={presentation.enabledThemes.includes("stamp")}
             onChange={(event) =>
-              onChange(
-                toggleCollectionTheme(
-                  presentation,
-                  "stamp",
-                  event.target.checked,
-                ),
-              )
+              onChange(toggleCollectionTheme(presentation, "stamp", event.target.checked))
             }
           />
           启用邮票主题
@@ -65,13 +59,7 @@ function CollectionPresentationPanel({
             type="checkbox"
             checked={presentation.enabledThemes.includes("editorial")}
             onChange={(event) =>
-              onChange(
-                toggleCollectionTheme(
-                  presentation,
-                  "editorial",
-                  event.target.checked,
-                ),
-              )
+              onChange(toggleCollectionTheme(presentation, "editorial", event.target.checked))
             }
           />
           启用编辑排版主题
@@ -81,13 +69,7 @@ function CollectionPresentationPanel({
             type="checkbox"
             checked={presentation.enabledThemes.includes("holographic")}
             onChange={(event) =>
-              onChange(
-                toggleCollectionTheme(
-                  presentation,
-                  "holographic",
-                  event.target.checked,
-                ),
-              )
+              onChange(toggleCollectionTheme(presentation, "holographic", event.target.checked))
             }
           />
           启用镭射主题
@@ -96,7 +78,9 @@ function CollectionPresentationPanel({
           <input
             type="checkbox"
             checked={presentation.enabledThemes.includes("cinema")}
-            onChange={(event) => onChange(toggleCollectionTheme(presentation, "cinema", event.target.checked))}
+            onChange={(event) =>
+              onChange(toggleCollectionTheme(presentation, "cinema", event.target.checked))
+            }
           />
           启用电影票根主题
         </label>
@@ -104,7 +88,9 @@ function CollectionPresentationPanel({
           <input
             type="checkbox"
             checked={presentation.enabledThemes.includes("boarding")}
-            onChange={(event) => onChange(toggleCollectionTheme(presentation, "boarding", event.target.checked))}
+            onChange={(event) =>
+              onChange(toggleCollectionTheme(presentation, "boarding", event.target.checked))
+            }
           />
           启用登机牌主题
         </label>
@@ -128,12 +114,7 @@ function CollectionPresentationPanel({
       {preview && (
         <div className="collectionPreview">
           <p className="meta">真实收藏卡片即时预览</p>
-          <CollectionCard
-            item={preview}
-            theme={presentation.defaultTheme}
-            preview
-            index={1}
-          />
+          <CollectionCard item={preview} theme={presentation.defaultTheme} preview index={1} />
         </div>
       )}
     </section>
@@ -200,26 +181,18 @@ function CollectionOrderPanel({
           <input
             aria-label={`第 ${index + 1} 项说明`}
             value={item.note}
-            onChange={(event) =>
-              onChange(index, { note: event.target.value })
-            }
+            onChange={(event) => onChange(index, { note: event.target.value })}
           />
           <label>
             <input
               type="checkbox"
               checked={item.visible !== false}
-              onChange={(event) =>
-                onChange(index, { visible: event.target.checked })
-              }
+              onChange={(event) => onChange(index, { visible: event.target.checked })}
             />
             公开
           </label>
           <div>
-            <button
-              className="ghost"
-              disabled={index === 0}
-              onClick={() => onMove(index, -1)}
-            >
+            <button className="ghost" disabled={index === 0} onClick={() => onMove(index, -1)}>
               上移
             </button>
             <button
@@ -246,8 +219,12 @@ export function AdminCollectionsPage() {
     adminCollectionPresentation,
     saveCollections,
   } = useContent();
-  const [selected, setSelected] = useState<CollectionReference[]>(() => adminCollections.map(toReference));
-  const [presentation, setPresentation] = useState<CollectionPresentation>(adminCollectionPresentation);
+  const [selected, setSelected] = useState<CollectionReference[]>(() =>
+    adminCollections.map(toReference),
+  );
+  const [presentation, setPresentation] = useState<CollectionPresentation>(
+    adminCollectionPresentation,
+  );
   const [message, setMessage] = useState("");
   const edits = useRef({ selected: 0, presentation: 0 });
   const dirty = useRef({ selected: false, presentation: false });
@@ -267,12 +244,11 @@ export function AdminCollectionsPage() {
       await saveCollections(selected, presentation);
       // A response may arrive after the user has already started another draft.
       if (edits.current.selected === savedEdits.selected) dirty.current.selected = false;
-      if (edits.current.presentation === savedEdits.presentation) dirty.current.presentation = false;
+      if (edits.current.presentation === savedEdits.presentation)
+        dirty.current.presentation = false;
       setMessage("收藏与展示策略已保存");
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : "保存失败，请稍后重试。",
-      );
+      setMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
     }
   };
   return (
@@ -301,9 +277,7 @@ export function AdminCollectionsPage() {
           onToggle={(reference) => {
             dirty.current.selected = true;
             edits.current.selected++;
-            setSelected((current) =>
-              toggleCollectionReference(current, reference),
-            );
+            setSelected((current) => toggleCollectionReference(current, reference));
           }}
         />
         <CollectionOrderPanel
@@ -312,16 +286,12 @@ export function AdminCollectionsPage() {
           onChange={(index, changes) => {
             dirty.current.selected = true;
             edits.current.selected++;
-            setSelected((current) =>
-              updateCollectionReference(current, index, changes),
-            );
+            setSelected((current) => updateCollectionReference(current, index, changes));
           }}
           onMove={(index, offset) => {
             dirty.current.selected = true;
             edits.current.selected++;
-            setSelected((current) =>
-              moveCollectionReference(current, index, offset),
-            );
+            setSelected((current) => moveCollectionReference(current, index, offset));
           }}
           onSave={() => void save()}
         />

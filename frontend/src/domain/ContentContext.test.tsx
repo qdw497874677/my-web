@@ -6,11 +6,23 @@ import { ContentContext, type ContentValue } from "./content-context";
 import { ApiError, contentApi } from "./repository";
 
 vi.mock("./repository", () => ({
-  ApiError: class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; } },
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  },
   contentApi: {
-    publicArticles: vi.fn(), publicAlbums: vi.fn(), publicCollections: vi.fn(),
-    categories: vi.fn(), articles: vi.fn(), albums: vi.fn(),
-    collections: vi.fn(), images: vi.fn(), updateArticle: vi.fn(),
+    publicArticles: vi.fn(),
+    publicAlbums: vi.fn(),
+    publicCollections: vi.fn(),
+    categories: vi.fn(),
+    articles: vi.fn(),
+    albums: vi.fn(),
+    collections: vi.fn(),
+    images: vi.fn(),
+    updateArticle: vi.fn(),
   },
 }));
 
@@ -29,7 +41,12 @@ beforeEach(() => {
   vi.mocked(contentApi.categories).mockResolvedValue([]);
   vi.mocked(contentApi.articles).mockResolvedValue([]);
   vi.mocked(contentApi.albums).mockResolvedValue([]);
-  vi.mocked(contentApi.collections).mockResolvedValue({ items: [], articles: [], albums: [], presentation });
+  vi.mocked(contentApi.collections).mockResolvedValue({
+    items: [],
+    articles: [],
+    albums: [],
+    presentation,
+  });
   vi.mocked(contentApi.images).mockResolvedValue([]);
   vi.mocked(contentApi.updateArticle).mockResolvedValue(undefined as never);
 });
@@ -37,7 +54,11 @@ afterEach(cleanup);
 
 describe("ContentProvider scopes", () => {
   it("loads only public lists in public scope", async () => {
-    render(<ContentProvider><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider>
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.publicStatus.collections.loading).toBe(false));
     expect(current.publicStatus).toEqual({
       articles: { loading: false, error: "" },
@@ -59,7 +80,11 @@ describe("ContentProvider scopes", () => {
     vi.mocked(contentApi.publicArticles).mockRejectedValueOnce(new Error("articles offline"));
     vi.mocked(contentApi.publicAlbums).mockResolvedValueOnce(albums);
     vi.mocked(contentApi.publicCollections).mockReturnValueOnce(new Promise(() => {}));
-    const view = render(<ContentProvider><Consumer /></ContentProvider>);
+    const view = render(
+      <ContentProvider>
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.publicStatus.articles.error).toBe("articles offline"));
     expect(current.publicStatus).toEqual({
       articles: { loading: false, error: "articles offline" },
@@ -78,14 +103,34 @@ describe("ContentProvider scopes", () => {
   it("ignores late success and failure after scope changes even when requests ignore abort", async () => {
     let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.publicArticles>>) => void;
     let rejectOld!: (error: Error) => void;
-    vi.mocked(contentApi.publicArticles).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
-    vi.mocked(contentApi.publicAlbums).mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject; }));
-    const view = render(<ContentProvider><Consumer /></ContentProvider>);
+    vi.mocked(contentApi.publicArticles).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    vi.mocked(contentApi.publicAlbums).mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectOld = reject;
+      }),
+    );
+    const view = render(
+      <ContentProvider>
+        <Consumer />
+      </ContentProvider>,
+    );
     const oldSignal = vi.mocked(contentApi.publicArticles).mock.lastCall?.[0];
-    view.rerender(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    view.rerender(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     expect(oldSignal?.aborted).toBe(true);
     await waitFor(() => expect(current.adminLoading).toBe(false));
-    view.rerender(<ContentProvider><Consumer /></ContentProvider>);
+    view.rerender(
+      <ContentProvider>
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.publicStatus.albums.loading).toBe(false));
     await act(async () => {
       resolveOld([{ id: "stale" }] as never);
@@ -98,8 +143,18 @@ describe("ContentProvider scopes", () => {
 
   it("ignores obsolete public StrictMode results", async () => {
     let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.publicCollections>>) => void;
-    vi.mocked(contentApi.publicCollections).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
-    render(<StrictMode><ContentProvider><Consumer /></ContentProvider></StrictMode>);
+    vi.mocked(contentApi.publicCollections).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    render(
+      <StrictMode>
+        <ContentProvider>
+          <Consumer />
+        </ContentProvider>
+      </StrictMode>,
+    );
     const oldSignal = vi.mocked(contentApi.publicCollections).mock.calls[0][0];
     expect(oldSignal?.aborted).toBe(true);
     await waitFor(() => expect(current.publicStatus.collections.loading).toBe(false));
@@ -117,7 +172,11 @@ describe("ContentProvider scopes", () => {
       current = value;
       return null;
     }
-    render(<ContentProvider scope="editorial"><InitialConsumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <InitialConsumer />
+      </ContentProvider>,
+    );
     expect(firstLoading).toBe(true);
     await waitFor(() => expect(current.adminError).toBe("offline"));
     expect(current.adminLoading).toBe(false);
@@ -138,25 +197,48 @@ describe("ContentProvider scopes", () => {
 
   it("ignores obsolete StrictMode requests", async () => {
     let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.categories>>) => void;
-    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
-    render(<StrictMode><ContentProvider scope="editorial"><Consumer /></ContentProvider></StrictMode>);
+    vi.mocked(contentApi.categories).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    render(
+      <StrictMode>
+        <ContentProvider scope="editorial">
+          <Consumer />
+        </ContentProvider>
+      </StrictMode>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     await act(async () => resolveOld([{ id: "old", name: "old" }] as never));
     expect(current.categories).toEqual([]);
   });
 
   it("does not let an older reload overwrite a newer reload", async () => {
-    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.categories>>) => void;
-    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    vi.mocked(contentApi.categories).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
     let oldRequest!: Promise<void>;
-    act(() => { oldRequest = current.reloadAdmin(); });
+    act(() => {
+      oldRequest = current.reloadAdmin();
+    });
     const oldSignal = vi.mocked(contentApi.categories).mock.lastCall?.[0];
     await act(async () => current.reloadAdmin());
     expect(oldSignal?.aborted).toBe(true);
     expect(current.adminLoading).toBe(false);
-    await act(async () => { resolveOld([{ id: "old", name: "old" }] as never); await oldRequest; });
+    await act(async () => {
+      resolveOld([{ id: "old", name: "old" }] as never);
+      await oldRequest;
+    });
     expect(current.categories).toEqual([]);
     expect(current.adminError).toBe("");
   });
@@ -164,7 +246,11 @@ describe("ContentProvider scopes", () => {
   it("keeps saved data on refresh failure and retries reads without replaying the write", async () => {
     const previous = [{ id: "article-1", title: "before" }] as never;
     vi.mocked(contentApi.articles).mockResolvedValueOnce(previous);
-    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     vi.mocked(contentApi.categories).mockRejectedValueOnce(new Error("offline"));
     await act(async () => current.updateArticle("article-1", { title: "saved" }));
@@ -181,10 +267,18 @@ describe("ContentProvider scopes", () => {
   it("resolves a successful write while its refresh is pending, then reports its failure", async () => {
     const previous = [{ id: "article-1", title: "before" }] as never;
     vi.mocked(contentApi.articles).mockResolvedValueOnce(previous);
-    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     let rejectRefresh!: (error: Error) => void;
-    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((_, reject) => { rejectRefresh = reject; }));
+    vi.mocked(contentApi.categories).mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectRefresh = reject;
+      }),
+    );
     let resolved = false;
     await act(async () => {
       await current.updateArticle("article-1", { title: "saved" });
@@ -193,7 +287,9 @@ describe("ContentProvider scopes", () => {
     expect(resolved).toBe(true);
     expect(current.adminRefreshing).toBe(true);
     expect(current.adminArticles).toEqual(previous);
-    await act(async () => { rejectRefresh(new Error("offline")); });
+    await act(async () => {
+      rejectRefresh(new Error("offline"));
+    });
     expect(current.adminRefreshError).toBe("offline");
     expect(current.adminRefreshing).toBe(false);
     await act(async () => current.retryAdminRefresh());
@@ -202,17 +298,31 @@ describe("ContentProvider scopes", () => {
   });
 
   it("times out a stuck background refresh and permits a read-only retry", async () => {
-    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     vi.useFakeTimers();
     try {
-      vi.mocked(contentApi.categories).mockImplementationOnce((signal) => new Promise((_, reject) => {
-        signal?.addEventListener("abort", () => reject(new ApiError(0, "aborted")), { once: true });
-      }));
+      vi.mocked(contentApi.categories).mockImplementationOnce(
+        (signal) =>
+          new Promise((_, reject) => {
+            signal?.addEventListener("abort", () => reject(new ApiError(0, "aborted")), {
+              once: true,
+            });
+          }),
+      );
       await act(async () => current.updateArticle("id", {}));
       const signal = vi.mocked(contentApi.categories).mock.lastCall?.[0];
       expect(signal).toBeDefined();
-      for (const method of [contentApi.articles, contentApi.albums, contentApi.collections, contentApi.images]) {
+      for (const method of [
+        contentApi.articles,
+        contentApi.albums,
+        contentApi.collections,
+        contentApi.images,
+      ]) {
         expect(vi.mocked(method).mock.lastCall?.[0]).toBe(signal);
       }
       expect(current.adminRefreshing).toBe(true);
@@ -231,17 +341,31 @@ describe("ContentProvider scopes", () => {
 
   it("aborts the initial admin load on teardown even when a mock ignores cancellation", async () => {
     let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.categories>>) => void;
-    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
-    const view = render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    vi.mocked(contentApi.categories).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    const view = render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     const signal = vi.mocked(contentApi.categories).mock.lastCall?.[0];
     expect(signal?.aborted).toBe(false);
     view.unmount();
     expect(signal?.aborted).toBe(true);
-    await act(async () => { resolveOld([{ id: "old", name: "old" }] as never); });
+    await act(async () => {
+      resolveOld([{ id: "old", name: "old" }] as never);
+    });
   });
 
   it("rejects an actual write failure without refreshing", async () => {
-    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     vi.mocked(contentApi.updateArticle).mockRejectedValueOnce(new Error("write failed"));
     await expect(current.updateArticle("id", {})).rejects.toThrow("write failed");
@@ -250,7 +374,11 @@ describe("ContentProvider scopes", () => {
   });
 
   it("suppresses a 401 background refresh warning", async () => {
-    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     vi.mocked(contentApi.categories).mockRejectedValueOnce(new ApiError(401, "unauthorized"));
     await act(async () => current.updateArticle("id", {}));
@@ -259,15 +387,28 @@ describe("ContentProvider scopes", () => {
   });
 
   it("ignores an older refresh failure after a newer refresh succeeds", async () => {
-    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    render(
+      <ContentProvider scope="editorial">
+        <Consumer />
+      </ContentProvider>,
+    );
     await waitFor(() => expect(current.adminLoading).toBe(false));
     let rejectOld!: (error: Error) => void;
-    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject; }));
+    vi.mocked(contentApi.categories).mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectOld = reject;
+      }),
+    );
     let old!: Promise<void>;
-    act(() => { old = current.retryAdminRefresh(); });
+    act(() => {
+      old = current.retryAdminRefresh();
+    });
     expect(current.adminRefreshing).toBe(true);
     await act(async () => current.retryAdminRefresh());
-    await act(async () => { rejectOld(new Error("obsolete")); await old; });
+    await act(async () => {
+      rejectOld(new Error("obsolete"));
+      await old;
+    });
     expect(current.adminRefreshError).toBe("");
     expect(current.adminRefreshing).toBe(false);
   });

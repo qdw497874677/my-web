@@ -1,3 +1,3 @@
-import { runData } from '../maintenance/data.js'
+import { runData } from "../maintenance/data.js";
 
-process.exitCode = runData(process.argv.slice(2))
+process.exitCode = runData(process.argv.slice(2));

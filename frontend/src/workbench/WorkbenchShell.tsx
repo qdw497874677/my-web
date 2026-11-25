@@ -24,8 +24,7 @@ export function WorkbenchShell({
   }, [location]);
 
   useEffect(() => {
-    const keydown = (event: KeyboardEvent) =>
-      event.key === "Escape" && setOpen(false);
+    const keydown = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
     addEventListener("keydown", keydown);
     return () => removeEventListener("keydown", keydown);
   }, []);
@@ -40,11 +39,7 @@ export function WorkbenchShell({
           </Link>
           <nav className="adminNav">
             {navigation.map(({ id, label, to }) => (
-              <Link
-                key={id}
-                className={location.pathname === to ? "active" : ""}
-                to={to}
-              >
+              <Link key={id} className={location.pathname === to ? "active" : ""} to={to}>
                 {label}
               </Link>
             ))}
@@ -58,11 +53,7 @@ export function WorkbenchShell({
         </aside>
         <main>
           <header className="adminTopbar">
-            <button
-              className="menuButton"
-              onClick={() => setOpen(!open)}
-              aria-expanded={open}
-            >
+            <button className="menuButton" onClick={() => setOpen(!open)} aria-expanded={open}>
               ☰
             </button>
             <p>林间刊物 / {title}</p>

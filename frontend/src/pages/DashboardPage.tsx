@@ -7,12 +7,7 @@ import { CategoryDialog } from "./AdminDialogs";
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : "操作失败，请稍后重试。";
 export function DashboardPage() {
-  const {
-    adminArticles: articles,
-    adminAlbums: albums,
-    categories,
-    createArticle,
-  } = useContent();
+  const { adminArticles: articles, adminAlbums: albums, categories, createArticle } = useContent();
   const [categoriesOpen, setCategoriesOpen] = useState(false),
     [error, setError] = useState("");
   const create = async () => {
@@ -43,26 +38,17 @@ export function DashboardPage() {
       <section className="stats">
         <article className="stat">
           <span>已发布文章</span>
-          <strong>
-            {
-              articles.filter((a) => a.status === "published" && !a.archived)
-                .length
-            }
-          </strong>
+          <strong>{articles.filter((a) => a.status === "published" && !a.archived).length}</strong>
           <small>当前公开列表</small>
         </article>
         <article className="stat">
           <span>草稿</span>
-          <strong>
-            {articles.filter((a) => a.status === "draft" && !a.archived).length}
-          </strong>
+          <strong>{articles.filter((a) => a.status === "draft" && !a.archived).length}</strong>
           <small>等待继续编辑</small>
         </article>
         <article className="stat">
           <span>公开相册</span>
-          <strong>
-            {albums.filter((a) => !a.isPrivate && !a.archived).length}
-          </strong>
+          <strong>{albums.filter((a) => !a.isPrivate && !a.archived).length}</strong>
           <small>进入相册管理</small>
         </article>
         <article className="stat">
@@ -90,9 +76,7 @@ export function DashboardPage() {
         ))}
         <p className="error">{error}</p>
       </section>
-      {categoriesOpen && (
-        <CategoryDialog onClose={() => setCategoriesOpen(false)} />
-      )}
+      {categoriesOpen && <CategoryDialog onClose={() => setCategoriesOpen(false)} />}
     </>
   );
 }

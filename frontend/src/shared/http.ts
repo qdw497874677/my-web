@@ -6,7 +6,11 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchApi<T>(path: string, init: RequestInit = {}, options: { onUnauthorized?: () => void } = {}): Promise<T> {
+export async function fetchApi<T>(
+  path: string,
+  init: RequestInit = {},
+  options: { onUnauthorized?: () => void } = {},
+): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData))
     headers.set("Content-Type", "application/json");
@@ -19,8 +23,13 @@ export async function fetchApi<T>(path: string, init: RequestInit = {}, options:
   if (!response.ok) {
     if (response.status === 401) options.onUnauthorized?.();
     const payload: unknown = await response.json().catch(() => null);
-    const message = typeof payload === "object" && payload !== null && "error" in payload && typeof payload.error === "string"
-      ? payload.error : `请求失败（${response.status}）`;
+    const message =
+      typeof payload === "object" &&
+      payload !== null &&
+      "error" in payload &&
+      typeof payload.error === "string"
+        ? payload.error
+        : `请求失败（${response.status}）`;
     throw new ApiError(response.status, message);
   }
   if (response.status === 204) return undefined as T;

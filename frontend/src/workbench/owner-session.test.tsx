@@ -7,41 +7,115 @@ import { fetchAdminApi } from "./admin-http";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
-const session = (id = "one") => new Response(JSON.stringify({ authenticated: true, owner: { id, email: `${id}@example.com` } }), { status: 200 });
+const session = (id = "one") =>
+  new Response(JSON.stringify({ authenticated: true, owner: { id, email: `${id}@example.com` } }), {
+    status: 200,
+  });
 const failure = (status: number) => new Response(JSON.stringify({ error: "error" }), { status });
 
 function Controls() {
   const { owner, login, logout, logoutError } = useOwnerSession();
-  return <>
-    <span data-testid="owner">{owner?.id ?? "none"}</span>
-    <span data-testid="logout-error">{logoutError}</span>
-    <button onClick={() => { void login("a", "b").catch(() => {}); }}>login</button>
-    <button onClick={() => { void logout(); }}>logout</button>
-    <button onClick={() => { void fetchAdminApi("/api/admin/articles").catch(() => {}); }}>admin request</button>
-  </>;
+  return (
+    <>
+      <span data-testid="owner">{owner?.id ?? "none"}</span>
+      <span data-testid="logout-error">{logoutError}</span>
+      <button
+        onClick={() => {
+          void login("a", "b").catch(() => {});
+        }}
+      >
+        login
+      </button>
+      <button
+        onClick={() => {
+          void logout();
+        }}
+      >
+        logout
+      </button>
+      <button
+        onClick={() => {
+          void fetchAdminApi("/api/admin/articles").catch(() => {});
+        }}
+      >
+        admin request
+      </button>
+    </>
+  );
 }
 function App({ initial = "/admin/one" }: { initial?: string }) {
-  return <MemoryRouter initialEntries={[initial]}><OwnerSessionProvider><Routes>
-    <Route path="/" element={<><div>public page</div><Link to="/admin/one">protected</Link><Link to="/admin/login">sign in</Link></>} />
-    <Route path="/admin">
-      <Route path="login" element={<><div>login page</div><Link to="/">public</Link><Controls /></>} />
-      <Route element={<RequireOwner />}>
-        <Route path="one" element={<><div>private one</div><Link to="/admin/two">next</Link><Link to="/">public</Link><Controls /></>} />
-        <Route path="two" element={<><div>private two</div><Link to="/">public</Link><Controls /></>} />
-      </Route>
-    </Route>
-  </Routes></OwnerSessionProvider></MemoryRouter>;
+  return (
+    <MemoryRouter initialEntries={[initial]}>
+      <OwnerSessionProvider>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <>
+                <div>public page</div>
+                <Link to="/admin/one">protected</Link>
+                <Link to="/admin/login">sign in</Link>
+              </>
+            }
+          />
+          <Route path="/admin">
+            <Route
+              path="login"
+              element={
+                <>
+                  <div>login page</div>
+                  <Link to="/">public</Link>
+                  <Controls />
+                </>
+              }
+            />
+            <Route element={<RequireOwner />}>
+              <Route
+                path="one"
+                element={
+                  <>
+                    <div>private one</div>
+                    <Link to="/admin/two">next</Link>
+                    <Link to="/">public</Link>
+                    <Controls />
+                  </>
+                }
+              />
+              <Route
+                path="two"
+                element={
+                  <>
+                    <div>private two</div>
+                    <Link to="/">public</Link>
+                    <Controls />
+                  </>
+                }
+              />
+            </Route>
+          </Route>
+        </Routes>
+      </OwnerSessionProvider>
+    </MemoryRouter>
+  );
 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("owner session boundary", () => {
   it("waits for a real session before mounting private content and retries initial failures", async () => {
     const pending = deferred<Response>();
-    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(session()));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(session()),
+    );
     render(<App />);
     expect(screen.queryByText("private one")).not.toBeInTheDocument();
     await act(async () => pending.resolve(failure(500)));
@@ -52,7 +126,10 @@ describe("owner session boundary", () => {
 
   it("revalidates navigation without blanking and ignores superseded validation", async () => {
     const pending = deferred<Response>();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(session()).mockReturnValueOnce(pending.promise));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(session()).mockReturnValueOnce(pending.promise),
+    );
     render(<App />);
     await screen.findByText("private one");
     fireEvent.click(screen.getByText("next"));
@@ -82,7 +159,10 @@ describe("owner session boundary", () => {
   });
 
   it("shows retry on a failed fresh guard check even when an old owner exists", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(session()).mockResolvedValueOnce(failure(503))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(session())
+      .mockResolvedValueOnce(failure(503))
       .mockResolvedValueOnce(session());
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
@@ -108,8 +188,14 @@ describe("owner session boundary", () => {
   });
 
   it("does not log out on a failed revalidation but redirects on a current 401", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(session()).mockResolvedValueOnce(failure(503))
-      .mockResolvedValueOnce(failure(401)));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(session())
+        .mockResolvedValueOnce(failure(503))
+        .mockResolvedValueOnce(failure(401)),
+    );
     render(<App />);
     await screen.findByText("private one");
     fireEvent.click(screen.getByText("next"));
@@ -128,7 +214,11 @@ describe("owner session boundary", () => {
 
   it("blocks login until logout settles and reports an unconfirmed logout", async () => {
     const pending = deferred<Response>();
-    const fetchMock = vi.fn().mockResolvedValueOnce(session()).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(session("new"));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(session())
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValueOnce(session("new"));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     await screen.findByText("private one");
@@ -145,7 +235,10 @@ describe("owner session boundary", () => {
 
   it("keeps logout pending across public navigation and rejects protected reentry until login", async () => {
     const logout = deferred<Response>();
-    const fetchMock = vi.fn().mockResolvedValueOnce(session()).mockReturnValueOnce(logout.promise)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(session())
+      .mockReturnValueOnce(logout.promise)
       .mockResolvedValueOnce(session("new"));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
@@ -169,7 +262,10 @@ describe("owner session boundary", () => {
   it("serializes login cookie writes and waits for pending login before logout", async () => {
     const login = deferred<Response>();
     const logout = deferred<Response>();
-    const fetchMock = vi.fn().mockReturnValueOnce(login.promise).mockReturnValueOnce(logout.promise)
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(login.promise)
+      .mockReturnValueOnce(logout.promise)
       .mockResolvedValueOnce(session("new"));
     vi.stubGlobal("fetch", fetchMock);
     render(<App initial="/admin/login" />);
@@ -193,8 +289,12 @@ describe("owner session boundary", () => {
   it("ignores a prior session's admin 401 after login, but expires the current session", async () => {
     const oldRequest = deferred<Response>();
     const currentRequest = deferred<Response>();
-    const fetchMock = vi.fn().mockResolvedValueOnce(session()).mockReturnValueOnce(oldRequest.promise)
-      .mockResolvedValueOnce(new Response(null, { status: 204 })).mockResolvedValueOnce(session("new"))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(session())
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(session("new"))
       .mockReturnValueOnce(currentRequest.promise);
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);

@@ -25,13 +25,13 @@ function ArticleDetail({ slug }: { slug: string | undefined }) {
     if (!slug) return;
     void contentApi
       .publicArticle(slug, controller.signal)
-      .then((result) => { if (!controller.signal.aborted) setArticle(result); })
+      .then((result) => {
+        if (!controller.signal.aborted) setArticle(result);
+      })
       .catch((reason) => {
         if (controller.signal.aborted) return;
-        if (reason instanceof ApiError && reason.status === 404)
-          setNotFound(true);
-        else
-          setError(reason instanceof Error ? reason.message : "文章加载失败");
+        if (reason instanceof ApiError && reason.status === 404) setNotFound(true);
+        else setError(reason instanceof Error ? reason.message : "文章加载失败");
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -42,8 +42,7 @@ function ArticleDetail({ slug }: { slug: string | undefined }) {
     const update = () =>
       setProgress(
         document.documentElement.scrollHeight > innerHeight
-          ? (scrollY / (document.documentElement.scrollHeight - innerHeight)) *
-              100
+          ? (scrollY / (document.documentElement.scrollHeight - innerHeight)) * 100
           : 0,
       );
     addEventListener("scroll", update, { passive: true });

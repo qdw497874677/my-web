@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, contentApi } from "./repository";
 import { ContentContext, type ContentValue } from "./content-context";
 import type {
@@ -37,15 +31,13 @@ export function ContentProvider({
   const [publicArticles, setPublicArticles] = useState<Article[]>([]),
     [publicAlbums, setPublicAlbums] = useState<Album[]>([]),
     [publicCollections, setPublicCollections] = useState<CollectionView[]>([]),
-    [publicCollectionPresentation, setPublicCollectionPresentation] =
-      useState(defaultPresentation),
+    [publicCollectionPresentation, setPublicCollectionPresentation] = useState(defaultPresentation),
     [publicStatus, setPublicStatus] = useState(initialPublicStatus);
   const [adminArticles, setAdminArticles] = useState<Article[]>([]),
     [adminAlbums, setAdminAlbums] = useState<Album[]>([]),
     [categories, setCategories] = useState<Category[]>([]),
     [adminCollections, setAdminCollections] = useState<CollectionView[]>([]),
-    [adminCollectionPresentation, setAdminCollectionPresentation] =
-      useState(defaultPresentation),
+    [adminCollectionPresentation, setAdminCollectionPresentation] = useState(defaultPresentation),
     [images, setImages] = useState<ImageAsset[]>([]),
     [adminLoading, setAdminLoading] = useState(scope === "editorial"),
     [adminError, setAdminError] = useState(""),
@@ -73,16 +65,23 @@ export function ContentProvider({
         if (!active.current || expected !== generation.current || signal.aborted) return;
         setPublicStatus((previous) => ({
           ...previous,
-          [key]: { loading: false, error: error instanceof Error ? error.message : "公开内容加载失败" },
+          [key]: {
+            loading: false,
+            error: error instanceof Error ? error.message : "公开内容加载失败",
+          },
         }));
       }
     };
     void load("articles", () => contentApi.publicArticles(signal), setPublicArticles);
     void load("albums", () => contentApi.publicAlbums(signal), setPublicAlbums);
-    void load("collections", () => contentApi.publicCollections(signal), (collections) => {
-      setPublicCollections(collections.items);
-      setPublicCollectionPresentation(collections.presentation);
-    });
+    void load(
+      "collections",
+      () => contentApi.publicCollections(signal),
+      (collections) => {
+        setPublicCollections(collections.items);
+        setPublicCollectionPresentation(collections.presentation);
+      },
+    );
   }, []);
   const loadAdminData = useCallback(async () => {
     if (!active.current) return;
@@ -94,27 +93,30 @@ export function ContentProvider({
     const initial = adminLoadingRef.current;
     if (!initial) setAdminRefreshing(true);
     const isCurrent = () =>
-      active.current &&
-      expected === generation.current &&
-      request === adminRequest.current;
+      active.current && expected === generation.current && request === adminRequest.current;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let onAbort: (() => void) | undefined;
     try {
       const requests = Promise.all([
-          contentApi.categories(controller.signal),
-          contentApi.articles(controller.signal),
-          contentApi.albums(controller.signal),
-          contentApi.collections(controller.signal),
-          contentApi.images(controller.signal),
-        ]);
+        contentApi.categories(controller.signal),
+        contentApi.articles(controller.signal),
+        contentApi.albums(controller.signal),
+        contentApi.collections(controller.signal),
+        contentApi.images(controller.signal),
+      ]);
       const aborted = new Promise<never>((_, reject) => {
         onAbort = () => reject(controller.signal.reason);
         controller.signal.addEventListener("abort", onAbort, { once: true });
       });
       if (!initial)
-        timeout = setTimeout(() => controller.abort(new Error("编辑部刷新超时，请重试")), adminRefreshTimeoutMs);
-      const [nextCategories, articles, albums, collections, nextImages] =
-        await Promise.race([requests, aborted]);
+        timeout = setTimeout(
+          () => controller.abort(new Error("编辑部刷新超时，请重试")),
+          adminRefreshTimeoutMs,
+        );
+      const [nextCategories, articles, albums, collections, nextImages] = await Promise.race([
+        requests,
+        aborted,
+      ]);
       if (!isCurrent()) return;
       setCategories(nextCategories);
       setAdminArticles(articles);
@@ -245,8 +247,7 @@ export function ContentProvider({
       const album = adminAlbums.find((item) => item.id === albumId),
         index = album?.photos.findIndex((item) => item.id === id) ?? -1,
         target = index + offset;
-      if (!album || index < 0 || target < 0 || target >= album.photos.length)
-        return;
+      if (!album || index < 0 || target < 0 || target >= album.photos.length) return;
       const ids = album.photos.map((item) => item.id);
       [ids[index], ids[target]] = [ids[target], ids[index]];
       await persist(() => contentApi.orderPhotos(albumId, ids));
@@ -264,7 +265,5 @@ export function ContentProvider({
       await persist(() => contentApi.saveCollections(items, presentation));
     },
   };
-  return (
-    <ContentContext.Provider value={value}>{children}</ContentContext.Provider>
-  );
+  return <ContentContext.Provider value={value}>{children}</ContentContext.Provider>;
 }

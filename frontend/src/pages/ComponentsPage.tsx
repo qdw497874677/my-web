@@ -1,19 +1,7 @@
 import { useState } from "react";
 import { CollectionCard } from "../components/CollectionCard";
-import {
-  AlbumCard,
-  ArticleCard,
-  MixedHeadline,
-  SectionRule,
-} from "../components/editorial";
-import {
-  Button,
-  Dialog,
-  FilterChips,
-  SelectField,
-  StatusPill,
-  TextField,
-} from "../components/ui";
+import { AlbumCard, ArticleCard, MixedHeadline, SectionRule } from "../components/editorial";
+import { Button, Dialog, FilterChips, SelectField, StatusPill, TextField } from "../components/ui";
 import { useContent } from "../domain/useContent";
 import { getAlbumCover } from "../domain/repository";
 
@@ -31,39 +19,31 @@ export function ComponentsPage() {
       <MixedHeadline>
         林间刊物的<em>组件档案</em>
       </MixedHeadline>
-      <p className="lead">
-        Tokens → Primitives → Composites → Patterns。此页面不进入公开导航。
-      </p>
+      <p className="lead">Tokens → Primitives → Composites → Patterns。此页面不进入公开导航。</p>
       <section className="componentSection">
         <h2>Tokens</h2>
-        <div
-          className="componentCanvas"
-          style={{ display: "flex", gap: 12, flexWrap: "wrap" }}
-        >
-          {["paper", "ink", "coral", "mustard", "olive", "bone"].map(
-            (color) => (
-              <div
-                key={color}
-                style={{
-                  width: 120,
-                  height: 80,
-                  padding: 10,
-                  background: `var(--${color})`,
-                  color: color === "ink" ? "var(--paper)" : "var(--ink)",
-                }}
-              >
-                {color}
-              </div>
-            ),
-          )}
+        <div className="componentCanvas" style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {["paper", "ink", "coral", "mustard", "olive", "bone"].map((color) => (
+            <div
+              key={color}
+              style={{
+                width: 120,
+                height: 80,
+                padding: 10,
+                background: `var(--${color})`,
+                color: color === "ink" ? "var(--paper)" : "var(--ink)",
+              }}
+            >
+              {color}
+            </div>
+          ))}
         </div>
       </section>
       <section className="componentSection">
         <h2>Primitives</h2>
         <div className="componentCanvas formStack">
           <div>
-            <Button>主要按钮</Button>{" "}
-            <Button variant="secondary">次要按钮</Button>{" "}
+            <Button>主要按钮</Button> <Button variant="secondary">次要按钮</Button>{" "}
             <Button variant="danger">危险动作</Button>
           </div>
           <TextField label="文本输入" placeholder="输入内容" />
@@ -93,16 +73,10 @@ export function ComponentsPage() {
       </section>
       <section className="componentSection">
         <h2>Patterns</h2>
-        <div className="articleGrid">
-          {article && <ArticleCard article={article} />}
-        </div>
+        <div className="articleGrid">{article && <ArticleCard article={article} />}</div>
         {album && (
           <div className="albumGrid">
-            <AlbumCard
-              album={album}
-              cover={getAlbumCover(album)}
-              onOpen={() => {}}
-            />
+            <AlbumCard album={album} cover={getAlbumCover(album)} onOpen={() => {}} />
           </div>
         )}
         {collection && (

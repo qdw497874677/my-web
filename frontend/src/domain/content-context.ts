@@ -34,11 +34,7 @@ export interface ContentValue {
   updateCategory: (id: string, name: string) => Promise<void>;
   moveCategory: (id: string, offset: number) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
-  createArticle: (
-    title: string,
-    categoryId: string,
-    imageAssetId?: string,
-  ) => Promise<void>;
+  createArticle: (title: string, categoryId: string, imageAssetId?: string) => Promise<void>;
   updateArticle: (id: string, input: Partial<ArticleInput>) => Promise<void>;
   archiveArticle: (id: string, archived: boolean) => Promise<void>;
   createAlbum: (title: string, categoryId: string) => Promise<void>;
@@ -47,11 +43,7 @@ export interface ContentValue {
   createPhoto: (albumId: string, input: PhotoInput) => Promise<void>;
   updatePhoto: (id: string, input: Partial<PhotoInput>) => Promise<void>;
   deletePhoto: (id: string) => Promise<void>;
-  movePhotoOrder: (
-    albumId: string,
-    id: string,
-    offset: number,
-  ) => Promise<void>;
+  movePhotoOrder: (albumId: string, id: string, offset: number) => Promise<void>;
   movePhoto: (id: string, albumId: string) => Promise<void>;
   uploadImage: (file: File) => Promise<void>;
   deleteImage: (id: string) => Promise<void>;

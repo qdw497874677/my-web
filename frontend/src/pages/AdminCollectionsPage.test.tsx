@@ -8,19 +8,39 @@ import { AdminCollectionsPage } from "./AdminCollectionsPage";
 vi.mock("../domain/useContent", () => ({ useContent: vi.fn() }));
 
 const item = (note: string): CollectionView => ({
-  id: "collection-1", type: "文章", sourceType: "article", articleId: "article-1",
-  title: "文章", meta: "文章", image: "", alt: "", href: "#", note, visible: true,
+  id: "collection-1",
+  type: "文章",
+  sourceType: "article",
+  articleId: "article-1",
+  title: "文章",
+  meta: "文章",
+  image: "",
+  alt: "",
+  href: "#",
+  note,
+  visible: true,
 });
 const presentation = (defaultTheme: "stamp" | "editorial"): CollectionPresentation => ({
-  defaultTheme, enabledThemes: ["stamp", "editorial"],
+  defaultTheme,
+  enabledThemes: ["stamp", "editorial"],
 });
-function content(note: string, defaultTheme: "stamp" | "editorial", saveCollections = vi.fn().mockResolvedValue(undefined)) {
+function content(
+  note: string,
+  defaultTheme: "stamp" | "editorial",
+  saveCollections = vi.fn().mockResolvedValue(undefined),
+) {
   return {
-    adminArticles: [], adminAlbums: [], adminCollections: [item(note)],
-    adminCollectionPresentation: presentation(defaultTheme), saveCollections,
+    adminArticles: [],
+    adminAlbums: [],
+    adminCollections: [item(note)],
+    adminCollectionPresentation: presentation(defaultTheme),
+    saveCollections,
   } as unknown as ContentValue;
 }
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("AdminCollectionsPage draft hydration", () => {
   it("hydrates untouched fields from authoritative updates", () => {
@@ -50,7 +70,11 @@ describe("AdminCollectionsPage draft hydration", () => {
 
   it("keeps edits made during an outstanding write, and hydrates untouched sections", async () => {
     let resolve!: () => void;
-    const save = vi.fn().mockReturnValue(new Promise<void>((done) => { resolve = done; }));
+    const save = vi.fn().mockReturnValue(
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+    );
     vi.mocked(useContent).mockReturnValue(content("初始", "stamp", save));
     const { rerender } = render(<AdminCollectionsPage />);
     fireEvent.click(screen.getByRole("button", { name: "保存收藏" }));
@@ -65,13 +89,19 @@ describe("AdminCollectionsPage draft hydration", () => {
 
   it("keeps a reordered draft after the saved order is refreshed", async () => {
     const initial = content("第一项", "stamp");
-    initial.adminCollections = [item("第一项"), { ...item("第二项"), id: "collection-2", articleId: "article-2" }];
+    initial.adminCollections = [
+      item("第一项"),
+      { ...item("第二项"), id: "collection-2", articleId: "article-2" },
+    ];
     vi.mocked(useContent).mockReturnValue(initial);
     const { rerender } = render(<AdminCollectionsPage />);
     fireEvent.click(screen.getByRole("button", { name: "保存收藏" }));
     await screen.findByText("收藏与展示策略已保存");
     fireEvent.click(screen.getAllByRole("button", { name: "下移" })[0]);
-    vi.mocked(useContent).mockReturnValue({ ...initial, adminCollections: [...initial.adminCollections] });
+    vi.mocked(useContent).mockReturnValue({
+      ...initial,
+      adminCollections: [...initial.adminCollections],
+    });
     rerender(<AdminCollectionsPage />);
     expect(screen.getByLabelText("第 1 项说明")).toHaveValue("第二项");
     expect(screen.getByLabelText("第 2 项说明")).toHaveValue("第一项");

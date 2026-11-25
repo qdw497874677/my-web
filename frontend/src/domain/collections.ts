@@ -21,27 +21,18 @@ export function previewCollection(
 ): CollectionView | undefined {
   const reference = selected[0];
   if (!reference) return saved[0];
-  const existing = saved.find(
-    (item) => keyOf(toReference(item)) === keyOf(reference),
-  );
+  const existing = saved.find((item) => keyOf(toReference(item)) === keyOf(reference));
   if (existing)
     return {
       ...existing,
       note: reference.note,
       visible: reference.visible !== false,
     };
-  const source = catalog.find(
-    (item) => keyOf(item.reference) === keyOf(reference),
-  );
+  const source = catalog.find((item) => keyOf(item.reference) === keyOf(reference));
   if (!source) return saved[0];
   return {
     id: reference.id ?? `preview-${keyOf(reference)}`,
-    type:
-      reference.type === "article"
-        ? "文章"
-        : reference.type === "album"
-          ? "相册"
-          : "照片",
+    type: reference.type === "article" ? "文章" : reference.type === "album" ? "相册" : "照片",
     sourceType: reference.type,
     title: source.title,
     meta: source.type,
@@ -113,8 +104,7 @@ export function buildCollectionCatalog(
     })),
     ...albums.flatMap((album) => {
       const cover =
-        album.photos.find((photo) => photo.id === album.coverPhotoId) ??
-        album.photos[0];
+        album.photos.find((photo) => photo.id === album.coverPhotoId) ?? album.photos[0];
       return cover
         ? [
             {
@@ -174,9 +164,7 @@ export function updateCollectionReference(
   index: number,
   changes: Partial<Pick<CollectionReference, "note" | "visible">>,
 ) {
-  return items.map((item, itemIndex) =>
-    itemIndex === index ? { ...item, ...changes } : item,
-  );
+  return items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...changes } : item));
 }
 
 export function toggleCollectionTheme(
@@ -193,14 +181,10 @@ export function toggleCollectionTheme(
         };
   }
   if (presentation.enabledThemes.length === 1) return presentation;
-  const enabledThemes = presentation.enabledThemes.filter(
-    (item) => item !== theme,
-  );
+  const enabledThemes = presentation.enabledThemes.filter((item) => item !== theme);
   return {
     enabledThemes,
     defaultTheme:
-      presentation.defaultTheme === theme
-        ? enabledThemes[0]
-        : presentation.defaultTheme,
+      presentation.defaultTheme === theme ? enabledThemes[0] : presentation.defaultTheme,
   };
 }

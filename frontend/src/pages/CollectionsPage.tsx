@@ -1,11 +1,7 @@
 import { useMemo, useState } from "react";
 import { CollectionCard } from "../components/CollectionCard";
 import { CollectionPreview } from "../components/CollectionPreview";
-import {
-  MixedHeadline,
-  PublicShell,
-  SectionRule,
-} from "../components/editorial";
+import { MixedHeadline, PublicShell, SectionRule } from "../components/editorial";
 import { FilterChips } from "../components/ui";
 import { useCollectionTheme } from "../domain/useCollectionTheme";
 import { useContent } from "../domain/useContent";
@@ -19,7 +15,10 @@ const themeLabels = {
   boarding: "登机牌",
 } as const;
 
-interface CollectionPreviewState { item: CollectionView; source: DOMRect }
+interface CollectionPreviewState {
+  item: CollectionView;
+  source: DOMRect;
+}
 
 export function CollectionsPage() {
   const {
@@ -30,8 +29,11 @@ export function CollectionsPage() {
   const [filter, setFilter] = useState("全部");
   const [preview, setPreview] = useState<CollectionPreviewState>();
   const [previewActive, setPreviewActive] = useState(false);
-  const { theme, options: themeOptions, switchTheme } =
-    useCollectionTheme(presentation, !status.loading && !status.error);
+  const {
+    theme,
+    options: themeOptions,
+    switchTheme,
+  } = useCollectionTheme(presentation, !status.loading && !status.error);
   const items = useMemo(
     () => all.filter((item) => filter === "全部" || item.type === filter),
     [all, filter],
@@ -39,7 +41,10 @@ export function CollectionsPage() {
 
   return (
     <PublicShell>
-      <main className={`container collectionPage${previewActive ? " collectionPageBlurred" : ""}`} data-collection-page>
+      <main
+        className={`container collectionPage${previewActive ? " collectionPageBlurred" : ""}`}
+        data-collection-page
+      >
         <section className="intro">
           <SectionRule index="Ⅲ." title="公开收藏" meta="文章 / 相册 / 照片" />
           <MixedHeadline>
@@ -56,22 +61,27 @@ export function CollectionsPage() {
             value={filter}
             onChange={setFilter}
           />
-          {!status.loading && !status.error && all.length > 0 && presentation.enabledThemes.length > 1 && (
-            <div className="collectionThemeSwitch" aria-label="卡片样式">
-              <span>卡片样式</span>
-              {themeOptions.map((option) => (
-                <button
-                  type="button"
-                  key={option}
-                  aria-pressed={theme === option}
-                  onClick={() => switchTheme(option)}
-                >
-                  {themeLabels[option]}
-                </button>
-              ))}
-            </div>
+          {!status.loading &&
+            !status.error &&
+            all.length > 0 &&
+            presentation.enabledThemes.length > 1 && (
+              <div className="collectionThemeSwitch" aria-label="卡片样式">
+                <span>卡片样式</span>
+                {themeOptions.map((option) => (
+                  <button
+                    type="button"
+                    key={option}
+                    aria-pressed={theme === option}
+                    onClick={() => switchTheme(option)}
+                  >
+                    {themeLabels[option]}
+                  </button>
+                ))}
+              </div>
+            )}
+          {!status.loading && !status.error && (
+            <span className="results">{items.length} 项收藏</span>
           )}
-          {!status.loading && !status.error && <span className="results">{items.length} 项收藏</span>}
         </div>
         {status.loading ? (
           <p className="results" role="status">
@@ -80,7 +90,16 @@ export function CollectionsPage() {
         ) : !status.error ? (
           <section className="collectionGrid">
             {items.map((item, index) => (
-              <CollectionCard key={item.id} item={item} theme={theme} index={index + 1} onPreview={(source) => { setPreview({ item, source }); setPreviewActive(true); }} />
+              <CollectionCard
+                key={item.id}
+                item={item}
+                theme={theme}
+                index={index + 1}
+                onPreview={(source) => {
+                  setPreview({ item, source });
+                  setPreviewActive(true);
+                }}
+              />
             ))}
           </section>
         ) : null}
@@ -91,7 +110,19 @@ export function CollectionsPage() {
           </MixedHeadline>
         )}
       </main>
-      {preview && <CollectionPreview item={preview.item} source={preview.source} theme={theme} index={items.findIndex(item => item.id === preview.item.id) + 1} onClosing={() => setPreviewActive(false)} onClose={() => { setPreview(undefined); setPreviewActive(false); }} />}
+      {preview && (
+        <CollectionPreview
+          item={preview.item}
+          source={preview.source}
+          theme={theme}
+          index={items.findIndex((item) => item.id === preview.item.id) + 1}
+          onClosing={() => setPreviewActive(false)}
+          onClose={() => {
+            setPreview(undefined);
+            setPreviewActive(false);
+          }}
+        />
+      )}
     </PublicShell>
   );
 }

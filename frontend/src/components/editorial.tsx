@@ -1,14 +1,6 @@
-import {
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
-import type {
-  Album,
-  Article,
-  Photo,
-} from "../domain/types";
+import type { Album, Article, Photo } from "../domain/types";
 
 export function MixedHeadline({
   children,
@@ -45,8 +37,7 @@ export function SectionRule({
 export function EditorialHeader() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    const keydown = (event: KeyboardEvent) =>
-      event.key === "Escape" && setOpen(false);
+    const keydown = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
     addEventListener("keydown", keydown);
     return () => removeEventListener("keydown", keydown);
   }, []);
@@ -54,10 +45,7 @@ export function EditorialHeader() {
     <>
       <div className="topline">
         <div className="container">
-          <span>
-            林间刊物 / 第 {String(new Date().getMonth() + 1).padStart(2, "0")}{" "}
-            章
-          </span>
+          <span>林间刊物 / 第 {String(new Date().getMonth() + 1).padStart(2, "0")} 章</span>
           <span>记录正在发生的日常</span>
         </div>
       </div>
@@ -74,11 +62,7 @@ export function EditorialHeader() {
             <NavLink to="/articles">文章</NavLink>
             <NavLink to="/albums">相册</NavLink>
             <NavLink to="/collections">收藏</NavLink>
-            <Link
-              className="adminLink"
-              to="/admin/login"
-              aria-label="进入编辑部"
-            >
+            <Link className="adminLink" to="/admin/login" aria-label="进入编辑部">
               编
             </Link>
           </nav>
@@ -139,8 +123,7 @@ export function ArticleCard({ article }: { article: Article }) {
   return (
     <Link className="articleCard" to={`/articles/${article.slug}`}>
       <span className="meta">
-        {article.date} / {article.category} /{" "}
-        {String(article.readingMinutes).padStart(2, "0")} 分钟
+        {article.date} / {article.category} / {String(article.readingMinutes).padStart(2, "0")} 分钟
       </span>
       <h3>{article.title}</h3>
       <p>{article.excerpt}</p>
@@ -161,11 +144,7 @@ export function AlbumCard({
     <article className="albumCardPublic">
       <button type="button" onClick={() => onOpen(album)} disabled={!cover}>
         <div className="albumVisual">
-          {cover ? (
-            <img src={cover.image} alt={cover.alt} />
-          ) : (
-            <span>空白相册</span>
-          )}
+          {cover ? <img src={cover.image} alt={cover.alt} /> : <span>空白相册</span>}
         </div>
         <h2>{album.title}</h2>
         <p>

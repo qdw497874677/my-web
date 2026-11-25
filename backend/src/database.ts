@@ -1,39 +1,52 @@
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
-import { albums, articles, categories, collections } from './seed-data.js'
-import { hashPassword } from './security.js'
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { albums, articles, categories, collections } from "./seed-data.js";
+import { hashPassword } from "./security.js";
 
-export const LATEST_DATABASE_VERSION = 5
+export const LATEST_DATABASE_VERSION = 5;
 
 export function openDatabase(path: string): DatabaseSync {
-  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
-  const db = new DatabaseSync(path)
+  if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
+  const db = new DatabaseSync(path);
   try {
-    db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;')
-    migrate(db)
-    return db
+    db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+    migrate(db);
+    return db;
   } catch (error) {
-    try { db.close() } catch { /* Preserve the setup error. */ }
-    throw error
+    try {
+      db.close();
+    } catch {
+      /* Preserve the setup error. */
+    }
+    throw error;
   }
 }
 
 function migrateVersion(db: DatabaseSync, sql: string): void {
-  db.exec('BEGIN')
+  db.exec("BEGIN");
   try {
-    db.exec(sql)
-    db.exec('COMMIT')
+    db.exec(sql);
+    db.exec("COMMIT");
   } catch (error) {
-    try { db.exec('ROLLBACK') } catch { /* Preserve the migration error. */ }
-    throw error
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      /* Preserve the migration error. */
+    }
+    throw error;
   }
 }
 
 export function migrate(db: DatabaseSync): void {
-  const version = Number((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
-  if (version > LATEST_DATABASE_VERSION) throw new Error(`不支持的数据库版本: ${version}`)
-  if (version === 0) migrateVersion(db, `
+  const version = Number(
+    (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
+  );
+  if (version > LATEST_DATABASE_VERSION) throw new Error(`不支持的数据库版本: ${version}`);
+  if (version === 0)
+    migrateVersion(
+      db,
+      `
     CREATE TABLE owners(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE TABLE sessions(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE, expires_at TEXT NOT NULL);
     CREATE TABLE categories(id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, position INTEGER NOT NULL UNIQUE);
@@ -48,8 +61,12 @@ export function migrate(db: DatabaseSync): void {
     CREATE UNIQUE INDEX featured_photo_source ON featured(photo_id) WHERE type='photo';
     CREATE TABLE subscriptions(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     PRAGMA user_version = 1;
-  `)
-  if (version < 2) migrateVersion(db, `
+  `,
+    );
+  if (version < 2)
+    migrateVersion(
+      db,
+      `
     INSERT OR IGNORE INTO assets VALUES ('asset-builtin-cta','cta.png','image/png',0,'external',NULL,'/assets/cta.png',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
     INSERT OR IGNORE INTO assets VALUES ('asset-builtin-hero','hero.png','image/png',0,'external',NULL,'/assets/hero.png',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 
@@ -87,8 +104,12 @@ export function migrate(db: DatabaseSync): void {
     WHEN EXISTS(SELECT 1 FROM albums WHERE id=OLD.album_id AND cover_photo_id=OLD.id)
     BEGIN SELECT RAISE(ABORT,'delete album cover after selecting replacement'); END;
     PRAGMA user_version = 2;
-  `)
-  if (version < 3) migrateVersion(db, `
+  `,
+    );
+  if (version < 3)
+    migrateVersion(
+      db,
+      `
     DROP TRIGGER IF EXISTS featured_photo_album_insert;
     DROP TRIGGER IF EXISTS featured_photo_album_update;
     DROP INDEX IF EXISTS featured_article_source;
@@ -124,8 +145,12 @@ export function migrate(db: DatabaseSync): void {
     );
     INSERT INTO collection_presentation VALUES (1,'stamp','["stamp","editorial"]');
     PRAGMA user_version = 3;
-  `)
-  if (version < 4) migrateVersion(db, `
+  `,
+    );
+  if (version < 4)
+    migrateVersion(
+      db,
+      `
         ALTER TABLE collection_presentation RENAME TO collection_presentation_v3;
         CREATE TABLE collection_presentation(
           singleton INTEGER PRIMARY KEY CHECK(singleton=1),
@@ -145,8 +170,12 @@ export function migrate(db: DatabaseSync): void {
           OR NOT EXISTS(SELECT 1 FROM json_each(NEW.enabled_themes) WHERE value=NEW.default_theme)
         BEGIN SELECT RAISE(ABORT,'invalid collection presentation'); END;
         PRAGMA user_version = 4;
-  `)
-  if (version < 5) migrateVersion(db, `
+  `,
+    );
+  if (version < 5)
+    migrateVersion(
+      db,
+      `
         DROP TRIGGER IF EXISTS collection_presentation_insert;
         DROP TRIGGER IF EXISTS collection_presentation_update;
         ALTER TABLE collection_presentation RENAME TO collection_presentation_v4;
@@ -168,44 +197,151 @@ export function migrate(db: DatabaseSync): void {
           OR NOT EXISTS(SELECT 1 FROM json_each(NEW.enabled_themes) WHERE value=NEW.default_theme)
         BEGIN SELECT RAISE(ABORT,'invalid collection presentation'); END;
         PRAGMA user_version = 5;
-  `)
+  `,
+    );
 }
 
 export function hasOwner(db: DatabaseSync): boolean {
-  return Number((db.prepare('SELECT COUNT(*) AS count FROM owners').get() as { count: number }).count) === 1
+  return (
+    Number(
+      (db.prepare("SELECT COUNT(*) AS count FROM owners").get() as { count: number }).count,
+    ) === 1
+  );
 }
 
-export async function initializeOwner(db: DatabaseSync, email: string, password: string, at = new Date()): Promise<void> {
-  const count = Number((db.prepare('SELECT COUNT(*) AS count FROM owners').get() as { count: number }).count)
-  if (count) throw new Error('所有者账户已经初始化')
-  db.prepare('INSERT INTO owners VALUES (?, ?, ?, ?)').run('owner', email.trim().toLowerCase(), await hashPassword(password), at.toISOString())
+export async function initializeOwner(
+  db: DatabaseSync,
+  email: string,
+  password: string,
+  at = new Date(),
+): Promise<void> {
+  const count = Number(
+    (db.prepare("SELECT COUNT(*) AS count FROM owners").get() as { count: number }).count,
+  );
+  if (count) throw new Error("所有者账户已经初始化");
+  db.prepare("INSERT INTO owners VALUES (?, ?, ?, ?)").run(
+    "owner",
+    email.trim().toLowerCase(),
+    await hashPassword(password),
+    at.toISOString(),
+  );
 }
 
 export function seedContent(db: DatabaseSync, at = new Date()): void {
-  if (Number((db.prepare('SELECT COUNT(*) AS count FROM categories').get() as { count: number }).count)) return
-  db.exec('BEGIN')
+  if (
+    Number(
+      (db.prepare("SELECT COUNT(*) AS count FROM categories").get() as { count: number }).count,
+    )
+  )
+    return;
+  db.exec("BEGIN");
   try {
-    const timestamp = at.toISOString()
-    const assetByUrl = new Map<string,string>()
+    const timestamp = at.toISOString();
+    const assetByUrl = new Map<string, string>();
     const externalAsset = (url: string) => {
-      const existing = assetByUrl.get(url)
-      if (existing) return existing
-      const registered = db.prepare("SELECT id FROM assets WHERE kind='external' AND url=?").get(url) as { id: string } | undefined
-      if (registered) { assetByUrl.set(url,registered.id); return registered.id }
-      const id = `asset-preloaded-${url.replace(/^\/assets\//,'').replace(/[^a-z0-9]+/gi,'-')}`
-      db.prepare('INSERT INTO assets VALUES (?, ?, ?, 0, ?, NULL, ?, ?)').run(id, url.split('/').at(-1) ?? id, 'image/png', 'external', url, timestamp)
-      assetByUrl.set(url,id)
-      return id
-    }
-    const categoryStatement = db.prepare('INSERT INTO categories VALUES (?, ?, ?)')
-    categories.forEach(([id,name],position)=>categoryStatement.run(id,name,position))
-    const articleStatement = db.prepare('INSERT INTO articles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)')
-    articles.forEach(([id,slug,title,excerpt,categoryId,date,minutes,image,alt,status,scheduledAt,pinned])=>articleStatement.run(id,slug,title,excerpt,categoryId,date,minutes,externalAsset(image),alt,`# ${title}\n\n${excerpt}`,status,scheduledAt,pinned,timestamp,timestamp))
-    const albumStatement = db.prepare('INSERT INTO albums VALUES (?, ?, ?, ?, ?, ?, NULL, 1, NULL, ?, ?)')
-    const photoStatement = db.prepare('INSERT INTO photos VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    albums.forEach(([id,title,description,categoryId,location,date,cover,isPrivate,photos])=>{ albumStatement.run(id,title,description,categoryId,location,date,timestamp,timestamp); photos.forEach(([photoId,photoTitle,caption,image,alt],position)=>photoStatement.run(photoId,id,photoTitle,caption,externalAsset(image),alt,position,timestamp)); db.prepare('UPDATE albums SET cover_photo_id=?,is_private=? WHERE id=?').run(cover,isPrivate,id) })
-    const collectionStatement=db.prepare('INSERT INTO collections VALUES (?, ?, ?, ?, ?, ?, 1, ?)')
-    collections.forEach(([id,type,articleId,albumId,photoId,note],position)=>collectionStatement.run(id,type,articleId,albumId,photoId,note,position))
-    db.exec('COMMIT')
-  } catch (error) { db.exec('ROLLBACK'); throw error }
+      const existing = assetByUrl.get(url);
+      if (existing) return existing;
+      const registered = db
+        .prepare("SELECT id FROM assets WHERE kind='external' AND url=?")
+        .get(url) as { id: string } | undefined;
+      if (registered) {
+        assetByUrl.set(url, registered.id);
+        return registered.id;
+      }
+      const id = `asset-preloaded-${url.replace(/^\/assets\//, "").replace(/[^a-z0-9]+/gi, "-")}`;
+      db.prepare("INSERT INTO assets VALUES (?, ?, ?, 0, ?, NULL, ?, ?)").run(
+        id,
+        url.split("/").at(-1) ?? id,
+        "image/png",
+        "external",
+        url,
+        timestamp,
+      );
+      assetByUrl.set(url, id);
+      return id;
+    };
+    const categoryStatement = db.prepare("INSERT INTO categories VALUES (?, ?, ?)");
+    categories.forEach(([id, name], position) => categoryStatement.run(id, name, position));
+    const articleStatement = db.prepare(
+      "INSERT INTO articles VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+    );
+    articles.forEach(
+      ([
+        id,
+        slug,
+        title,
+        excerpt,
+        categoryId,
+        date,
+        minutes,
+        image,
+        alt,
+        status,
+        scheduledAt,
+        pinned,
+      ]) =>
+        articleStatement.run(
+          id,
+          slug,
+          title,
+          excerpt,
+          categoryId,
+          date,
+          minutes,
+          externalAsset(image),
+          alt,
+          `# ${title}\n\n${excerpt}`,
+          status,
+          scheduledAt,
+          pinned,
+          timestamp,
+          timestamp,
+        ),
+    );
+    const albumStatement = db.prepare(
+      "INSERT INTO albums VALUES (?, ?, ?, ?, ?, ?, NULL, 1, NULL, ?, ?)",
+    );
+    const photoStatement = db.prepare("INSERT INTO photos VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    albums.forEach(
+      ([id, title, description, categoryId, location, date, cover, isPrivate, photos]) => {
+        albumStatement.run(
+          id,
+          title,
+          description,
+          categoryId,
+          location,
+          date,
+          timestamp,
+          timestamp,
+        );
+        photos.forEach(([photoId, photoTitle, caption, image, alt], position) =>
+          photoStatement.run(
+            photoId,
+            id,
+            photoTitle,
+            caption,
+            externalAsset(image),
+            alt,
+            position,
+            timestamp,
+          ),
+        );
+        db.prepare("UPDATE albums SET cover_photo_id=?,is_private=? WHERE id=?").run(
+          cover,
+          isPrivate,
+          id,
+        );
+      },
+    );
+    const collectionStatement = db.prepare(
+      "INSERT INTO collections VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+    );
+    collections.forEach(([id, type, articleId, albumId, photoId, note], position) =>
+      collectionStatement.run(id, type, articleId, albumId, photoId, note, position),
+    );
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }
