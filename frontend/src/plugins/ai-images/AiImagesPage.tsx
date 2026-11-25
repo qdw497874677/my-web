@@ -9,7 +9,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 function ImageWorkspace() {
-  const { catalog, loading, error } = useAiImagesCatalog();
+  const { catalog, loading, error, retry } = useAiImagesCatalog();
   const [templateId, setTemplateId] = useState("");
   const [modelId, setModelId] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -84,7 +84,7 @@ function ImageWorkspace() {
         <div><p className="meta">EDITORIAL TOOLS / IMAGE STUDIO</p><MixedHeadline>AI 生图</MixedHeadline></div>
         <span>创作工具 / 01</span>
       </div>
-      {loading ? <p role="status">正在加载生图模板…</p> : error ? <p className="aiNotice aiNoticeError" role="alert">{error}</p> : !catalog?.enabled ? <p className="aiNotice">AI 生图暂未启用。</p> : catalog.templates.length === 0 ? <p className="aiNotice">暂无可用的生图模板。</p> : (
+      {loading ? <p role="status">正在加载生图模板…</p> : error ? <div className="aiNotice aiNoticeError" role="alert"><p>{error}</p><button type="button" className="ghost" onClick={retry}>重新加载</button></div> : catalog?.issue === "invalid_configuration" ? <div className="aiNotice aiNoticeError" role="alert"><strong>AI 生图配置无效</strong><p>请检查后端生图配置和密钥后重启服务。刊物编辑不受影响。</p></div> : !catalog?.enabled ? <p className="aiNotice">AI 生图暂未启用。</p> : catalog.templates.length === 0 ? <p className="aiNotice">暂无可用的生图模板。</p> : (
         <div className="aiWorkspace">
           <form className="aiControls" onSubmit={submit}>
             <fieldset disabled={generating}>

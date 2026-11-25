@@ -8,8 +8,8 @@ import {Repository}from'./repository.js'
 import {hashPassword,verifyPassword}from'./security.js'
 import {LocalStorage,MemoryStorage,type StorageAdapter}from'./storage.js'
 import {DomainError,type AlbumInput,type ArticleInput,type CollectionInput,type CollectionPresentationInput}from'./types.js'
-import { aiImagesPlugin } from './plugins/ai-images/index.js'
-import { loadImageModels } from './plugins/ai-images/providers.js'
+import { aiImagesPlugin, type AiImagesOptions } from './plugins/ai-images/index.js'
+import { ImageConfigurationError, loadImageModels } from './plugins/ai-images/providers.js'
 import type { ImageModel } from './plugins/ai-images/contracts.js'
 
 export type App=FastifyInstance
@@ -26,11 +26,20 @@ const articleInput=(request:FastifyRequest,partial=false):Partial<ArticleInput>=
 const albumInput=(request:FastifyRequest,partial=false):Partial<AlbumInput>=>{const value=objectBody(request);return{...(value.title!==undefined||!partial?{title:stringField(value.title,'title')!}:{}),...(value.categoryId!==undefined||!partial?{categoryId:stringField(value.categoryId,'categoryId')!}:{}),...(value.description!==undefined?{description:stringField(value.description,'description',false)}:{}),...(value.location!==undefined?{location:stringField(value.location,'location')}:{}),...(value.date!==undefined?{date:stringField(value.date,'date')}:{}),...(value.coverPhotoId!==undefined?{coverPhotoId:value.coverPhotoId===null?null:stringField(value.coverPhotoId,'coverPhotoId')}:{}),...(value.isPrivate!==undefined?{isPrivate:booleanField(value.isPrivate,'isPrivate')}: {})} as Partial<AlbumInput>}
 const collectionInput=(request:FastifyRequest)=>{const body=objectBody(request),raw=body.items;if(!Array.isArray(raw))throw new DomainError(400,'items 必须是数组');const items=raw.map((entry,index)=>{if(!entry||typeof entry!=='object'||Array.isArray(entry))throw new DomainError(400,`items[${index}] 必须是对象`);const value=entry as Json,type=enumField(value.type,'type',['article','album','photo'] as const)!;return{...(value.id!==undefined?{id:stringField(value.id,'id')}:{}),type,...(value.articleId!==undefined?{articleId:stringField(value.articleId,'articleId')}:{}),...(value.albumId!==undefined?{albumId:stringField(value.albumId,'albumId')}:{}),...(value.photoId!==undefined?{photoId:stringField(value.photoId,'photoId')}:{}),...(value.note!==undefined?{note:stringField(value.note,'note',false)}:{}),...(value.visible!==undefined?{visible:booleanField(value.visible,'visible')}: {})} as CollectionInput});if(!body.presentation||typeof body.presentation!=='object'||Array.isArray(body.presentation))throw new DomainError(400,'presentation 必须是对象');const value=body.presentation as Json,defaultTheme=enumField(value.defaultTheme,'defaultTheme',['stamp','editorial','holographic','cinema','boarding'] as const),enabledThemes=stringArray(value.enabledThemes,'enabledThemes');if(!defaultTheme)throw new DomainError(400,'defaultTheme 必填');if(!enabledThemes.length||new Set(enabledThemes).size!==enabledThemes.length||enabledThemes.some(theme=>theme!=='stamp'&&theme!=='editorial'&&theme!=='holographic'&&theme!=='cinema'&&theme!=='boarding')||!enabledThemes.includes(defaultTheme))throw new DomainError(400,'收藏展示主题配置无效');return{items,presentation:{defaultTheme,enabledThemes} as CollectionPresentationInput}}
 
+function configureAiImages(models: AppOptions['aiImageModels']): Omit<AiImagesOptions, 'trustedOrigin'> {
+  try {
+    return { models: models ?? loadImageModels() }
+  } catch (error) {
+    if (!(error instanceof ImageConfigurationError)) throw error
+    return { models: [], issue: 'invalid_configuration' }
+  }
+}
+
 export async function buildApp(options:AppOptions={}):Promise<App>{
   const nodeEnv=options.nodeEnv??process.env.NODE_ENV??'development'
   const frontendOrigin = options.frontendOrigin ?? process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173'
-  const aiImageModels = options.aiImageModels ?? loadImageModels()
-  if (aiImageModels.length) {
+  const aiImages = configureAiImages(options.aiImageModels)
+  if (aiImages.models.length) {
     const origin = URL.parse(frontendOrigin)
     if (!origin || !['http:', 'https:'].includes(origin.protocol) || origin.origin !== frontendOrigin) {
       throw new Error('AI 生图要求 FRONTEND_ORIGIN 是完整的 HTTP(S) 源，不带末尾斜杠')
@@ -49,7 +58,7 @@ export async function buildApp(options:AppOptions={}):Promise<App>{
   app.post('/api/auth/login',{config:{rateLimit:limitOptions?{max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,keyGenerator:(request:FastifyRequest)=>request.ip}:false}},async(request,reply)=>{const value=objectBody(request),email=stringField(value.email,'email')!.trim().toLowerCase(),password=stringField(value.password,'password')!,timestamp=clock().getTime(),owner=repository.ownerByEmail(email),passwordMatches=await verifyPassword(password,owner?String(owner.password_hash):dummyPasswordHash);if(!owner||!passwordMatches)throw new DomainError(401,'邮箱或密码不正确');const expires=new Date(timestamp+(options.sessionTtlDays??Number(process.env.SESSION_TTL_DAYS??30))*86400000),id=repository.createSession(String(owner.id),expires.toISOString()),secure=options.cookieSecure??(process.env.COOKIE_SECURE?process.env.COOKIE_SECURE==='true':nodeEnv==='production');reply.setCookie('linjian_session',id,{httpOnly:true,sameSite:'lax',secure,path:'/',expires});return{authenticated:true,owner:{id:owner.id,email:owner.email}}})
   app.post('/api/auth/logout',async(request,reply)=>{if(request.cookies.linjian_session)repository.deleteSession(request.cookies.linjian_session);reply.clearCookie('linjian_session',{path:'/'}).code(204).send()});app.get('/api/auth/session',async request=>{const owner=request.cookies.linjian_session?repository.ownerBySession(request.cookies.linjian_session):undefined;return owner?{authenticated:true,owner}:{authenticated:false}})
   app.register(async admin=>{admin.addHook('preHandler',requireOwner)
-    await admin.register(aiImagesPlugin, { prefix: '/ai-images', models: aiImageModels, trustedOrigin: frontendOrigin })
+    await admin.register(aiImagesPlugin, { prefix: '/ai-images', ...aiImages, trustedOrigin: frontendOrigin })
     admin.get('/categories',async()=>({items:repository.categories()}));admin.post('/categories',async(request,reply)=>reply.code(201).send(repository.createCategory(stringField(objectBody(request).name,'name')!)));admin.patch('/categories/:id',async request=>repository.updateCategory(params(request).id!,stringField(objectBody(request).name,'name')!));admin.put('/categories/order',async request=>({items:repository.orderCategories(stringArray(objectBody(request).ids,'ids'))}));admin.delete('/categories/:id',async(request,reply)=>{repository.deleteCategory(params(request).id!);reply.code(204).send()})
     admin.get('/articles',async()=>({items:repository.articles()}));admin.post('/articles',async(request,reply)=>reply.code(201).send(repository.createArticle(articleInput(request) as ArticleInput)));admin.get('/articles/:id',async request=>repository.getArticle(params(request).id!));admin.patch('/articles/:id',async request=>repository.updateArticle(params(request).id!,articleInput(request,true)));admin.post('/articles/:id/archive',async request=>repository.archiveArticle(params(request).id!,true));admin.post('/articles/:id/restore',async request=>repository.archiveArticle(params(request).id!,false))
     admin.get('/albums',async()=>({items:repository.albums()}));admin.post('/albums',async(request,reply)=>reply.code(201).send(repository.createAlbum(albumInput(request) as AlbumInput)));admin.get('/albums/:id',async request=>repository.getAlbum(params(request).id!));admin.patch('/albums/:id',async request=>repository.updateAlbum(params(request).id!,albumInput(request,true)));admin.post('/albums/:id/archive',async request=>repository.archiveAlbum(params(request).id!,true));admin.post('/albums/:id/restore',async request=>repository.archiveAlbum(params(request).id!,false))

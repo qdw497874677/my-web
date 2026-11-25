@@ -8,6 +8,8 @@
 2. 在 `backend/.env` 或后端进程环境中设置供应商密钥。JSON 中的 `apiKeyEnv` 只填环境变量名，不填密钥。`npm run dev` 和 `npm start` 会自动加载 `.env`；不要在前端或 Git 中保存密钥。
 3. `FRONTEND_ORIGIN` 必须与浏览器打开编辑部的源完全一致（如 `http://localhost:5173`，不要带末尾斜杠）。重启后端，以刊主身份在编辑部打开「AI 生图」。若要停用，设置 `AI_IMAGES_ENABLED=false` 后重启；无需数据库迁移。
 
+如果生图配置文件缺失（显式指定路径时）、无法访问、格式无效或缺少密钥，后端只停用 AI 生图，不影响公开刊物和编辑功能。刊主可在「AI 生图」看到通用提示；检查配置和密钥后重启服务。未提供默认配置文件或主动停用时，不显示此提示。已有有效模型时，错误的 `FRONTEND_ORIGIN` 仍会阻止后端启动。
+
 接入 MyCodex：将 [`ai-images.mycodex.example.json`](../backend/ai-images.mycodex.example.json) 复制为 `backend/data/ai-images.json`，把 `baseUrl` 换成自己的 MyCodex HTTPS API 基地址（包含 `/v1`），并在后端设置 `MYCODEX_API_KEY`。示例使用 `gpt-image-2`。
 
 插件只接受 PNG、JPEG、WebP 参考图，单张至多 5 MiB，每次至多两张，由模板指定确切数量。单进程同时只处理一次生成，且每十分钟至多发出六次生成请求；等待供应商响应最多 180 秒，没有自动重试。这些限制在重启时重置，不是供应商账单上限；超时的请求仍可能被供应商计费。
@@ -38,4 +40,4 @@ AI_IMAGES_LIVE_MODEL_ID=mycodex-gpt-image-2 npm run test:e2e -- --project=deskto
 
 ## 接口
 
-两个接口都需要刊主会话。`GET /api/admin/ai-images/catalog` 返回可用模板及模型；关闭时返回 `enabled: false`。`POST /api/admin/ai-images/generate` 还需要匹配的 `Origin`，接收 multipart 格式的 `templateId`、`modelId`、可选 `instructions`（最多 1000 字符）以及模板要求的零个或多个 `reference` 文件字段，成功时返回单张图片的二进制。模型名、版本和配额因供应商账号而异；配置示例不会替你请求或开通账号权限。
+两个接口都需要刊主会话。`GET /api/admin/ai-images/catalog` 返回可用模板及模型；关闭时返回 `enabled: false`，已识别的配置错误额外返回 `issue: "invalid_configuration"`，不包含错误原文、配置路径或密钥。`POST /api/admin/ai-images/generate` 在生图停用时返回 404；启用时还需要匹配的 `Origin`，接收 multipart 格式的 `templateId`、`modelId`、可选 `instructions`（最多 1000 字符）以及模板要求的零个或多个 `reference` 文件字段，成功时返回单张图片的二进制。模型名、版本和配额因供应商账号而异；配置示例不会替你请求或开通账号权限。

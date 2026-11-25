@@ -6,6 +6,7 @@ import { imageTemplates, supportsTemplate } from './templates.js'
 export interface AiImagesOptions {
   models: readonly ImageModel[]
   trustedOrigin: string
+  issue?: 'invalid_configuration'
 }
 
 const windowMs = 10 * 60 * 1000
@@ -13,20 +14,21 @@ const deadlineMs = 180 * 1000
 const uploadDeadlineMs = 60 * 1000
 
 export const aiImagesPlugin: FastifyPluginAsync<AiImagesOptions> = async (app, options) => {
+  const availableModels = options.issue ? [] : options.models
   const catalog = imageTemplates.map(template => ({
     id: template.id, label: template.label, description: template.description,
     referenceImageCount: template.referenceImageCount, aspectRatio: template.aspectRatio,
-    modelIds: options.models.filter(model => supportsTemplate(model, template)).map(model => model.id),
+    modelIds: availableModels.filter(model => supportsTemplate(model, template)).map(model => model.id),
   })).filter(template => template.modelIds.length > 0)
   const enabled = catalog.length > 0
   const modelIds = new Set(catalog.flatMap(template => template.modelIds))
-  const models = options.models.filter(model => modelIds.has(model.id)).map(({ id, label }) => ({ id, label }))
+  const models = availableModels.filter(model => modelIds.has(model.id)).map(({ id, label }) => ({ id, label }))
   let busy = false
   let attempts: number[] = []
 
   app.get('/catalog', async (_request, reply) => {
     reply.header('Cache-Control', 'no-store')
-    return { enabled, templates: catalog, models }
+    return { enabled, templates: catalog, models, ...(options.issue && { issue: options.issue }) }
   })
 
   app.post('/generate', { preHandler: async (request, reply) => {
@@ -70,7 +72,7 @@ export const aiImagesPlugin: FastifyPluginAsync<AiImagesOptions> = async (app, o
       if (uploadExpired || request.raw.aborted) throw new DomainError(400, '上传未完成')
       if ((fields.instructions?.length ?? 0) > 1000) throw new DomainError(400, '补充说明过长')
       const template = imageTemplates.find(item => item.id === fields.templateId)
-      const model = options.models.find(item => item.id === fields.modelId)
+      const model = availableModels.find(item => item.id === fields.modelId)
       if (!template || !model || !supportsTemplate(model, template) || references.length !== template.referenceImageCount) throw new DomainError(400, '模板、模型或参考图片不匹配')
 
       const prompt = template.prompt + (fields.instructions ? `\n用户补充说明：${fields.instructions}` : '')

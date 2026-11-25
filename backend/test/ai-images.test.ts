@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildApp, type App } from '../src/app.js'
 import { maxImageOutputBytes, type ImageModel } from '../src/plugins/ai-images/contracts.js'
@@ -24,11 +27,16 @@ describe('AI 图片接口', () => {
   let cookie = ''
   const generate = vi.fn<ImageModel['generate']>()
   const model: ImageModel = { id: 'fake', label: '测试模型', maxReferenceImages: 1, aspectRatios: ['1:1'], generate }
+  const appOptions = { databasePath: ':memory:', uploadDir: 'memory', nodeEnv: 'test', frontendOrigin: origin, initializeOwner: { email: 'test@test.test', password: 'test' } }
 
   async function start(models: readonly ImageModel[] = [model]) {
     generate.mockReset().mockResolvedValue({ bytes: png, mimeType: 'image/png' })
-    app = await buildApp({ databasePath: ':memory:', uploadDir: 'memory', nodeEnv: 'test', frontendOrigin: origin, aiImageModels: models, initializeOwner: { email: 'test@test.test', password: 'test' } })
-    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'test@test.test', password: 'test' } })
+    app = await buildApp({ ...appOptions, aiImageModels: models })
+    await loginOwner()
+  }
+  async function loginOwner() {
+    const login = await app!.inject({ method: 'POST', url: '/api/auth/login', payload: appOptions.initializeOwner })
+    expect(login.statusCode).toBe(200)
     cookie = `${login.cookies[0]!.name}=${login.cookies[0]!.value}`
   }
   function post(parts: Part[], headers: Record<string, string> = {}) {
@@ -43,6 +51,45 @@ describe('AI 图片接口', () => {
     expect((await app!.inject({ method: 'POST', url: '/api/admin/ai-images/generate' })).statusCode).toBe(401)
     expect((await app!.inject({ method: 'GET', url: '/api/admin/ai-images/catalog', headers: { cookie } })).json()).toEqual({ enabled: false, templates: [], models: [] })
     expect((await post(fields())).statusCode).toBe(404)
+  })
+
+  it('isolates an invalid registry, exposes only a safe owner issue, and never dispatches generation', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'linjian-image-config-'))
+    const configPath = join(dir, 'private-config.json')
+    const fetcher = vi.fn()
+    writeFileSync(configPath, '{"secret-value":"do-not-disclose"')
+    vi.stubEnv('AI_IMAGES_ENABLED', 'true')
+    vi.stubEnv('AI_IMAGES_CONFIG', configPath)
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      // Even with an origin unusable for generation, the invalid registry cannot enable it.
+      app = await buildApp({ ...appOptions, frontendOrigin: `${origin}/`, seed: true })
+      expect((await app.inject('/api/health')).statusCode).toBe(200)
+      const publicArticles = await app.inject('/api/public/articles')
+      expect(publicArticles.statusCode).toBe(200)
+      expect(publicArticles.json().items.length).toBeGreaterThan(0)
+      const path = '/api/admin/ai-images/catalog'
+      const anonymous = await app.inject(path)
+      expect(anonymous.statusCode).toBe(401)
+      expect(anonymous.body).not.toContain('invalid_configuration')
+      await loginOwner()
+      expect((await app.inject({ url: '/api/admin/articles', headers: { cookie } })).statusCode).toBe(200)
+      expect((await app.inject({ method: 'POST', url: '/api/admin/categories', headers: { cookie }, payload: { name: '配置故障期间的新栏目' } })).statusCode).toBe(201)
+      const catalog = await app.inject({ url: path, headers: { cookie } })
+      expect(catalog.statusCode).toBe(200)
+      expect(catalog.headers['cache-control']).toBe('no-store')
+      expect(catalog.json()).toEqual({ enabled: false, templates: [], models: [], issue: 'invalid_configuration' })
+      expect((await post(fields())).statusCode).toBe(404)
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('still refuses to start with configured models and a noncanonical trusted origin', async () => {
+    await expect(buildApp({ ...appOptions, frontendOrigin: `${origin}/`, aiImageModels: [model] })).rejects.toThrow('AI 生图要求 FRONTEND_ORIGIN')
   })
 
   it('exposes only compatible public catalog metadata and generates both workflows', async () => {

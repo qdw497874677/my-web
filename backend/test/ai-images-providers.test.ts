@@ -1,8 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadImageModels } from '../src/plugins/ai-images/providers.js'
+import { ImageConfigurationError, loadImageModels } from '../src/plugins/ai-images/providers.js'
 import { maxReferenceImageBytes, type GenerationInput } from '../src/plugins/ai-images/contracts.js'
 
 const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex')
@@ -49,6 +50,56 @@ describe('image provider registry', () => {
     expect(() => loadImageModels({ AI_IMAGES_CONFIG: join(dir, 'missing') }, fetcher, path)).toThrow(/^图片服务配置无效：配置文件$/)
     expect(() => loadImageModels({ AI_IMAGES_CONFIG: '' }, fetcher, path)).toThrow(/^图片服务配置无效：配置文件$/)
     expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('classifies expected path, file, parse and model validation failures without exposing inputs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'image-provider-test-'))
+    dirs.push(dir)
+    const path = join(dir, 'secret-config.json')
+    const fetcher = vi.fn<typeof fetch>()
+    const rejectsConfig = (fn: () => unknown) => {
+      try { fn(); throw new Error('expected configuration failure') } catch (error) {
+        expect(error).toBeInstanceOf(ImageConfigurationError)
+        expect((error as Error).message).not.toContain('secret')
+        expect((error as Error).cause).toBeUndefined()
+      }
+    }
+    rejectsConfig(() => loadImageModels({ AI_IMAGES_CONFIG: path }, fetcher))
+    rejectsConfig(() => loadImageModels({ AI_IMAGES_CONFIG: `${path}\0bad` }, fetcher))
+    rejectsConfig(() => loadImageModels({ AI_IMAGES_CONFIG: dir }, fetcher))
+    writeFileSync(path, Buffer.from([0xff]))
+    rejectsConfig(() => loadImageModels({ AI_IMAGES_CONFIG: path }, fetcher))
+    writeFileSync(path, '{ invalid secret')
+    rejectsConfig(() => loadImageModels({ AI_IMAGES_CONFIG: path }, fetcher))
+    writeFileSync(path, Buffer.alloc(1024 * 1024 + 1))
+    rejectsConfig(() => loadImageModels({ AI_IMAGES_CONFIG: path }, fetcher))
+    writeFileSync(path, JSON.stringify(config()))
+    rejectsConfig(() => loadImageModels({ AI_IMAGES_CONFIG: path }, fetcher))
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('propagates unexpected errors without reclassifying them', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'image-provider-test-'))
+    dirs.push(dir)
+    const path = join(dir, 'config.json')
+    writeFileSync(path, JSON.stringify(config()))
+    const failure = new Error('unexpected internal failure')
+    const env: NodeJS.ProcessEnv = { AI_IMAGES_CONFIG: path, get API_KEY(): string { throw failure } }
+    expect(() => loadImageModels(env, vi.fn())).toThrow(failure)
+    try { loadImageModels(env, vi.fn()) } catch (error) { expect(error).toBe(failure) }
+  })
+
+  it.skipIf(process.platform === 'win32')('classifies a Unix socket path as invalid configuration', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'image-provider-test-'))
+    dirs.push(dir)
+    const path = join(dir, 'registry.sock')
+    const server = createServer()
+    await new Promise<void>((resolve, reject) => server.once('error', reject).listen(path, resolve))
+    try {
+      expect(() => loadImageModels({ AI_IMAGES_CONFIG: path }, vi.fn())).toThrow(ImageConfigurationError)
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    }
   })
 
   it('maps OpenAI generations and edits without exposing credentials', async () => {

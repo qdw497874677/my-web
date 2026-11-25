@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { captureOwnerSessionInvalidation } from "../../workbench/owner-session-events";
 
 export interface ImageTemplate {
@@ -12,6 +12,7 @@ export interface ImageTemplate {
 
 export interface ImageGenerationCatalog {
   enabled: boolean;
+  issue?: "invalid_configuration";
   templates: ImageTemplate[];
   models: { id: string; label: string }[];
 }
@@ -31,6 +32,7 @@ const isNonemptyText = (value: unknown): value is string =>
 
 function parseCatalog(value: unknown): ImageGenerationCatalog {
   if (!isRecord(value) || typeof value.enabled !== "boolean" ||
+      (value.issue !== undefined && value.issue !== "invalid_configuration") ||
       !Array.isArray(value.templates) || !Array.isArray(value.models) ||
       !value.templates.every((item: unknown) =>
         isRecord(item) && isNonemptyText(item.id) && isNonemptyText(item.label) &&
@@ -65,8 +67,10 @@ async function request(path: string, init: RequestInit): Promise<Response> {
 }
 
 /** Only pass enabled=true after the administrator session has been confirmed. */
-export function useImageGenerationCatalog(enabled = false): CatalogState {
+export function useImageGenerationCatalog(enabled = false): CatalogState & { retry: () => void } {
   const [state, setState] = useState<CatalogState>(emptyState);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((current) => current + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -87,9 +91,9 @@ export function useImageGenerationCatalog(enabled = false): CatalogState {
       }
     })();
     return () => controller.abort();
-  }, [enabled]);
+  }, [enabled, attempt]);
 
-  return enabled ? state : emptyState;
+  return { ...(enabled ? state : emptyState), retry };
 }
 
 export async function generateImage(

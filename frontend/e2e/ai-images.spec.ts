@@ -123,6 +123,34 @@ test('未启用时不显示导航和生成控件', async ({ page }) => {
   await expect(page.getByRole('link', { name: '下载图片 ↓' })).toHaveCount(0)
 })
 
+test('配置无效时保留生图入口和安全提示，编辑部仍可使用', async ({ page }) => {
+  await page.context().addCookies(authCookies)
+  await page.route('**/api/admin/ai-images/catalog', route => route.fulfill({ json: { enabled: false, templates: [], models: [], issue: 'invalid_configuration' } }))
+  let submissions = 0
+  await page.route('**/api/admin/ai-images/generate', route => {
+    submissions++
+    return route.fulfill({ status: 200, contentType: 'image/png', body: pixel })
+  })
+
+  await page.goto('/admin/dashboard')
+  await expect(page.getByRole('button', { name: '管理栏目' })).toBeVisible()
+  await openAdminMenuIfNeeded(page)
+  const aiLink = page.getByRole('link', { name: 'AI 生图' })
+  await expect(aiLink).toBeVisible()
+  await aiLink.click()
+  await expect(page.getByText('AI 生图配置无效', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: '生成图片 ↗' })).toHaveCount(0)
+  await expect(page.getByLabel('选择模型')).toHaveCount(0)
+  await expect(page.getByRole('radio')).toHaveCount(0)
+  await openAdminMenuIfNeeded(page)
+  await page.getByRole('link', { name: '总览' }).click()
+  await expect(page).toHaveURL(/\/admin\/dashboard/)
+  await page.getByRole('button', { name: '管理栏目' }).click()
+  await expect(page.getByRole('dialog', { name: '管理栏目' })).toBeVisible()
+  await page.getByRole('button', { name: '完成' }).click()
+  expect(submissions).toBe(0)
+})
+
 // Keep logout last: the real backend revokes the beforeAll session shared by this file.
 test('退出使延迟的会话复核失效，直接重访私有生图页不会取得数据', async ({ page }) => {
   const dataRequests = watchDataRequests(page)

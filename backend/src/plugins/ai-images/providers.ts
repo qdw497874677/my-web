@@ -1,4 +1,4 @@
-import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs'
 import { aspectRatios, detectRasterMime, maxImageOutputBytes, maxReferenceImageBytes, type AspectRatio, type ImageModel, type RasterImage } from './contracts.js'
 
 const MAX_CONFIG_BYTES = 1024 * 1024
@@ -6,6 +6,14 @@ const MAX_JSON_BYTES = 17 * 1024 * 1024
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/
 const UPSTREAM_ERROR = 'Image provider request failed'
 const CONFIG_ERROR = '图片服务配置无效'
+
+type ConfigContext = '配置文件' | 'providers' | 'providers.protocol' | 'providers.apiKeyEnv' | 'providers.baseUrl' | 'providers.models' | 'providers.models.options'
+export class ImageConfigurationError extends Error {
+  constructor(context: ConfigContext = '配置文件') {
+    super(`${CONFIG_ERROR}：${context}`)
+    this.name = 'ImageConfigurationError'
+  }
+}
 
 type ObjectValue = Record<string, unknown>
 interface ProviderConfig {
@@ -25,43 +33,63 @@ interface Adapter {
 }
 
 function object(value: unknown, allowed: readonly string[], required: readonly string[] = allowed): ObjectValue {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(CONFIG_ERROR)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ImageConfigurationError()
   const result = value as ObjectValue
-  if (Object.keys(result).some(key => !allowed.includes(key)) || required.some(key => !Object.hasOwn(result, key))) throw new Error(CONFIG_ERROR)
+  if (Object.keys(result).some(key => !allowed.includes(key)) || required.some(key => !Object.hasOwn(result, key))) throw new ImageConfigurationError()
   return result
 }
 
 function safeId(value: unknown): string {
-  if (typeof value !== 'string' || !SAFE_ID.test(value)) throw new Error(CONFIG_ERROR)
+  if (typeof value !== 'string' || !SAFE_ID.test(value)) throw new ImageConfigurationError()
   return value
 }
 
 function baseUrl(value: unknown): string {
-  if (typeof value !== 'string' || value.length > 2048 || /[\\\s?#]/.test(value)) throw new Error(CONFIG_ERROR)
+  if (typeof value !== 'string' || value.length > 2048 || /[\\\s?#]/.test(value)) throw new ImageConfigurationError()
   let url: URL
-  try { url = new URL(value) } catch { throw new Error(CONFIG_ERROR) }
-  if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.search || url.hash) throw new Error(CONFIG_ERROR)
+  try { url = new URL(value) } catch (error) { if (error instanceof TypeError) throw new ImageConfigurationError(); throw error }
+  if (url.protocol !== 'https:' || !url.hostname || url.username || url.password || url.search || url.hash) throw new ImageConfigurationError()
   return url.href.replace(/\/$/, '')
 }
 
 function readConfig(path: string, missingOk: boolean): unknown {
+  if (typeof path !== 'string' || path.includes('\0')) throw new ImageConfigurationError()
+  const expectedErrnos = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENOTDIR', 'EISDIR', 'ELOOP', 'ENAMETOOLONG'])
   let fd: number
-  try { fd = openSync(path, 'r') } catch (error) {
-    if (missingOk && (error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+  try { fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK) } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code
+    if (missingOk && code === 'ENOENT') return undefined
+    // Unix sockets can fail at open before the regular-file check.
+    if (code === 'ENXIO' || (code && expectedErrnos.has(code))) throw new ImageConfigurationError()
     throw error
   }
   try {
-    const stat = fstatSync(fd)
-    if (!stat.isFile() || stat.size > MAX_CONFIG_BYTES) throw new Error(CONFIG_ERROR)
-    const bytes = Buffer.alloc(MAX_CONFIG_BYTES + 1)
+    let bytes: Buffer
     let length = 0
-    while (length < bytes.length) {
-      const count = readSync(fd, bytes, length, bytes.length - length, null)
-      if (!count) break
-      length += count
+    try {
+      const stat = fstatSync(fd)
+      if (!stat.isFile() || stat.size > MAX_CONFIG_BYTES) throw new ImageConfigurationError()
+      bytes = Buffer.alloc(MAX_CONFIG_BYTES + 1)
+      while (length < bytes.length) {
+        const count = readSync(fd, bytes, length, bytes.length - length, null)
+        if (!count) break
+        length += count
+      }
+      if (length > MAX_CONFIG_BYTES) throw new ImageConfigurationError()
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | null)?.code
+      if (code && expectedErrnos.has(code)) throw new ImageConfigurationError()
+      throw error
     }
-    if (length > MAX_CONFIG_BYTES) throw new Error(CONFIG_ERROR)
-    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, length))) as unknown
+    let text: string
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, length)) } catch (error) {
+      if (error instanceof TypeError) throw new ImageConfigurationError()
+      throw error
+    }
+    try { return JSON.parse(text) as unknown } catch (error) {
+      if (error instanceof SyntaxError) throw new ImageConfigurationError()
+      throw error
+    }
   } finally { closeSync(fd) }
 }
 
@@ -123,7 +151,7 @@ const adapters = {
       // Optional quality is an OpenAI-specific enum; absence leaves the provider default.
       const options = rawOptions === undefined ? {} : object(rawOptions, ['quality'], [])
       const quality = options.quality
-      if (quality !== undefined && quality !== 'low' && quality !== 'medium' && quality !== 'high' && quality !== 'auto') throw new Error(CONFIG_ERROR)
+      if (quality !== undefined && quality !== 'low' && quality !== 'medium' && quality !== 'high' && quality !== 'auto') throw new ImageConfigurationError()
       return async (input, signal) => {
         const params = { model: model.model, prompt: input.prompt, size: sizes[input.aspectRatio], n: 1, output_format: 'png', ...(quality ? { quality } : {}) }
         let body: BodyInit
@@ -150,7 +178,7 @@ const adapters = {
       // Optional imageSize is a Gemini-specific enum; absence leaves the provider default.
       const options = rawOptions === undefined ? {} : object(rawOptions, ['imageSize'], [])
       const imageSize = options.imageSize
-      if (imageSize !== undefined && imageSize !== '1K' && imageSize !== '2K' && imageSize !== '4K') throw new Error(CONFIG_ERROR)
+      if (imageSize !== undefined && imageSize !== '1K' && imageSize !== '2K' && imageSize !== '4K') throw new ImageConfigurationError()
       return async (input, signal) => {
         const parts = [{ text: input.prompt }, ...input.references.map(reference => ({ inline_data: { mime_type: reference.mimeType, data: reference.bytes.toString('base64') } }))]
         const body = JSON.stringify({ contents: [{ parts }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: input.aspectRatio, ...(imageSize ? { imageSize } : {}) } } })
@@ -182,13 +210,13 @@ type Protocol = keyof typeof adapters
 /** Load and validate the registry once at startup; never expose provider credentials. */
 export function loadImageModels(env: NodeJS.ProcessEnv = process.env, fetcher: typeof fetch = fetch, defaultPath = './data/ai-images.json'): ImageModel[] {
   if (env.AI_IMAGES_ENABLED === 'false') return []
-  let context = '配置文件'
+  let context: ConfigContext = '配置文件'
   try {
     const explicitPath = env.AI_IMAGES_CONFIG
     const rawConfig = readConfig(explicitPath === undefined ? defaultPath : explicitPath, explicitPath === undefined)
     if (rawConfig === undefined) return []
     const config = object(rawConfig, ['providers'])
-    if (!Array.isArray(config.providers)) throw new Error(CONFIG_ERROR)
+    if (!Array.isArray(config.providers)) throw new ImageConfigurationError()
     const ids = new Set<string>()
     const providerIds = new Set<string>()
     const result: ImageModel[] = []
@@ -196,29 +224,29 @@ export function loadImageModels(env: NodeJS.ProcessEnv = process.env, fetcher: t
       context = 'providers'
       const item = object(rawProvider, ['id', 'protocol', 'apiKeyEnv', 'baseUrl', 'models'], ['id', 'protocol', 'apiKeyEnv', 'models'])
       const id = safeId(item.id)
-      if (providerIds.has(id)) throw new Error(CONFIG_ERROR)
+      if (providerIds.has(id)) throw new ImageConfigurationError()
       providerIds.add(id)
       context = 'providers.protocol'
-      if (typeof item.protocol !== 'string' || !Object.hasOwn(adapters, item.protocol)) throw new Error(CONFIG_ERROR)
+      if (typeof item.protocol !== 'string' || !Object.hasOwn(adapters, item.protocol)) throw new ImageConfigurationError()
       const protocol = item.protocol as Protocol
       const adapter = adapters[protocol]
       context = 'providers.apiKeyEnv'
-      if (typeof item.apiKeyEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item.apiKeyEnv)) throw new Error(CONFIG_ERROR)
+      if (typeof item.apiKeyEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item.apiKeyEnv)) throw new ImageConfigurationError()
       const apiKey = env[item.apiKeyEnv]
-      if (typeof apiKey !== 'string' || !apiKey || /[\x00-\x20\x7f]/.test(apiKey)) throw new Error(CONFIG_ERROR)
+      if (typeof apiKey !== 'string' || !apiKey || /[\x00-\x20\x7f]/.test(apiKey)) throw new ImageConfigurationError()
       context = 'providers.baseUrl'
       const provider: ProviderConfig = { baseUrl: baseUrl(item.baseUrl === undefined ? adapter.defaultBaseUrl : item.baseUrl), apiKey }
       context = 'providers.models'
-      if (!Array.isArray(item.models)) throw new Error(CONFIG_ERROR)
+      if (!Array.isArray(item.models)) throw new ImageConfigurationError()
       for (const rawModel of item.models) {
         context = 'providers.models'
         const entry = object(rawModel, ['id', 'label', 'model', 'maxReferenceImages', 'aspectRatios', 'options'], ['id', 'label', 'model', 'maxReferenceImages', 'aspectRatios'])
         const modelId = safeId(entry.id)
-        if (ids.has(modelId)) throw new Error(CONFIG_ERROR)
+        if (ids.has(modelId)) throw new ImageConfigurationError()
         ids.add(modelId)
-        if (typeof entry.label !== 'string' || !entry.label.trim() || entry.label.length > 200 || /[\x00-\x1f\x7f]/.test(entry.label)) throw new Error(CONFIG_ERROR)
-        if (!Number.isInteger(entry.maxReferenceImages) || (entry.maxReferenceImages as number) < 0 || (entry.maxReferenceImages as number) > 2) throw new Error(CONFIG_ERROR)
-        if (!Array.isArray(entry.aspectRatios) || entry.aspectRatios.length === 0 || entry.aspectRatios.some(ratio => !aspectRatios.includes(ratio)) || new Set(entry.aspectRatios).size !== entry.aspectRatios.length) throw new Error(CONFIG_ERROR)
+        if (typeof entry.label !== 'string' || !entry.label.trim() || entry.label.length > 200 || /[\x00-\x1f\x7f]/.test(entry.label)) throw new ImageConfigurationError()
+        if (!Number.isInteger(entry.maxReferenceImages) || (entry.maxReferenceImages as number) < 0 || (entry.maxReferenceImages as number) > 2) throw new ImageConfigurationError()
+        if (!Array.isArray(entry.aspectRatios) || entry.aspectRatios.length === 0 || entry.aspectRatios.some(ratio => !aspectRatios.includes(ratio)) || new Set(entry.aspectRatios).size !== entry.aspectRatios.length) throw new ImageConfigurationError()
         const model: ModelConfig = { id: modelId, label: entry.label, model: safeId(entry.model), maxReferenceImages: entry.maxReferenceImages as number, aspectRatios: [...entry.aspectRatios] as AspectRatio[] }
         context = 'providers.models.options'
         const generate = adapter.bind(provider, model, entry.options, fetcher)
@@ -236,5 +264,8 @@ export function loadImageModels(env: NodeJS.ProcessEnv = process.env, fetcher: t
       }
     }
     return result
-  } catch { throw new Error(`${CONFIG_ERROR}：${context}`) }
+  } catch (error) {
+    if (error instanceof ImageConfigurationError) throw new ImageConfigurationError(context)
+    throw error
+  }
 }

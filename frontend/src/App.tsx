@@ -34,7 +34,7 @@ function WorkbenchLayout() {
   const { catalog } = useAiImagesCatalog();
   const page = [...editorialPages, aiImages].find(({ to }) => matchPath(to, pathname));
   if (!owner || !page) return null;
-  const navigation = catalog?.enabled ? [...editorialPages, aiImages] : editorialPages;
+  const navigation = catalog?.enabled || catalog?.issue === "invalid_configuration" ? [...editorialPages, aiImages] : editorialPages;
   return (
     <WorkbenchShell
       title={page.title}

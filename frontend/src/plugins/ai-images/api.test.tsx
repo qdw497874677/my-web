@@ -24,7 +24,7 @@ describe('image generation catalog', () => {
     await waitFor(() => expect(result.current.catalog).toEqual(catalog))
     expect(fetch).toHaveBeenCalledWith('/api/admin/ai-images/catalog', expect.objectContaining({ credentials: 'include', signal: expect.any(AbortSignal) }))
     rerender({ enabled: false })
-    expect(result.current).toEqual({ catalog: null, loading: false, error: null })
+    expect(result.current).toEqual({ catalog: null, loading: false, error: null, retry: expect.any(Function) })
   })
 
   it('supports a disabled catalog and rejects malformed data', async () => {
@@ -36,6 +36,26 @@ describe('image generation catalog', () => {
     rerender({ enabled: true })
     await waitFor(() => expect(result.current.error).toBe('图片生成配置无效，请稍后重试'))
     expect(result.current.catalog).toBeNull()
+  })
+
+  it('accepts the configuration issue and rejects unknown issues', async () => {
+    const invalid = { enabled: false, issue: 'invalid_configuration', templates: [], models: [] }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json(invalid)).mockResolvedValueOnce(json({ ...invalid, issue: 'unknown' })))
+    const { result } = renderHook(() => useImageGenerationCatalog(true))
+    await waitFor(() => expect(result.current.catalog).toEqual(invalid))
+    act(() => result.current.retry())
+    await waitFor(() => expect(result.current.error).toBe('图片生成配置无效，请稍后重试'))
+    expect(result.current.catalog).toBeNull()
+  })
+
+  it('retries a failed catalog request', async () => {
+    const fetch = vi.fn().mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(json(catalog))
+    vi.stubGlobal('fetch', fetch)
+    const { result } = renderHook(() => useImageGenerationCatalog(true))
+    await waitFor(() => expect(result.current.error).toBe('无法连接服务器，请检查网络后重试'))
+    act(() => result.current.retry())
+    await waitFor(() => expect(result.current.catalog).toEqual(catalog))
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it('aborts an old request and ignores a late response after re-enabling', async () => {
