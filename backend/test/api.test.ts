@@ -3,6 +3,25 @@ import { DatabaseSync } from 'node:sqlite'
 import { buildApp as buildRealApp, type App } from '../src/app.js'
 import { migrate } from '../src/database.js'
 import type { StorageAdapter } from '../src/storage.js'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { MAX_IMAGE_BYTES, rasterType } from '../src/publication/raster.js'
+
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=', 'base64')
+function multipart(data:Buffer, type='image/png') { const boundary='----linjian-test'; return { headers: {'content-type': `multipart/form-data; boundary=${boundary}`}, payload: Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="pixel.png"\r\nContent-Type: ${type}\r\n\r\n`),data,Buffer.from(`\r\n--${boundary}--\r\n`)]) } }
+
+describe('raster container validation', () => {
+  it('accepts bounded PNG, JPEG, GIF and WebP containers and rejects truncation', () => {
+    const samples: [string, Buffer][] = [
+      ['image/png',png],
+      ['image/jpeg',Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==','base64')],
+      ['image/gif',Buffer.from('R0lGODlhAQABAPAAAP///wAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==','base64')],
+      ['image/webp',Buffer.from('UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAgA0JaQAA3AA/vuUAAA=','base64')],
+    ]
+    for (const [type,bytes] of samples) { expect(rasterType(bytes)).toBe(type);expect(rasterType(bytes.subarray(0,bytes.length-1))).toBeUndefined();expect(rasterType(Buffer.concat([bytes,Buffer.from('text')]))).toBeUndefined() }
+  })
+})
 
 function buildApp(options: NonNullable<Parameters<typeof buildRealApp>[0]>) {
   return buildRealApp({ ...options, aiImageModels: [] })
@@ -73,9 +92,10 @@ describe('个人刊物 HTTP API', () => {
     expect(publicAlbums.items.some((album: { id: string }) => album.id === 'album-desk')).toBe(false)
     const first = await app.inject({ method: 'POST', url: '/api/public/subscriptions', payload: { email: ' Reader@Example.COM ' } })
     const second = await app.inject({ method: 'POST', url: '/api/public/subscriptions', payload: { email: 'reader@example.com' } })
-    expect(first.statusCode).toBe(201)
-    expect(second.statusCode).toBe(200)
-    expect(second.json().id).toBe(first.json().id)
+    expect(first.statusCode).toBe(204)
+    expect(second.statusCode).toBe(204)
+    expect(first.body).toBe('')
+    expect(second.body).toBe('')
   })
 
   it('排期文章只在指定时刻到达后公开', async () => {
@@ -87,16 +107,117 @@ describe('个人刊物 HTTP API', () => {
   })
 
   it('图片支持 multipart 上传、稳定读取和引用删除保护', async () => {
-    const boundary = '----linjian-test'
-    const multipart = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="pixel.png"\r\nContent-Type: image/png\r\n\r\nPNGDATA\r\n--${boundary}--\r\n`)
-    const upload = await app.inject({ method: 'POST', url: '/api/admin/images', headers: { cookie, 'content-type': `multipart/form-data; boundary=${boundary}` }, payload: multipart })
+    const form = multipart(png)
+    const upload = await app.inject({ method: 'POST', url: '/api/admin/images', headers: { cookie, ...form.headers }, payload: form.payload })
     expect(upload.statusCode).toBe(201)
-    expect((await app.inject({ method: 'GET', url: upload.json().url })).body).toBe('PNGDATA')
+    expect((await app.inject({ method: 'GET', url: upload.json().url })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'GET', url: upload.json().previewUrl, headers: { cookie } })).rawPayload).toEqual(png)
     const article = (await app.inject({ method: 'POST', url: '/api/admin/articles', headers: { cookie }, payload: { title: '引用图片', categoryId: 'category-daily', image: upload.json().url } })).json()
     expect((await app.inject({ method: 'DELETE', url: `/api/admin/images/${upload.json().id}`, headers: { cookie } })).statusCode).toBe(409)
-    expect((await app.inject({ method: 'GET', url: upload.json().url })).body).toBe('PNGDATA')
+    expect((await app.inject({ method: 'GET', url: upload.json().url })).statusCode).toBe(404)
     await app.inject({ method: 'POST', url: `/api/admin/articles/${article.id}/archive`, headers: { cookie } })
     expect((await app.inject({ method: 'DELETE', url: `/api/admin/images/${upload.json().id}`, headers: { cookie } })).statusCode).toBe(409)
+  })
+
+  it('图片仅由当前公开的结构化引用授权，且媒体响应不可缓存', async () => {
+    const form=multipart(png), upload=await app.inject({method:'POST',url:'/api/admin/images',headers:{cookie,...form.headers},payload:form.payload}), asset=upload.json()
+    expect(upload.statusCode).toBe(201)
+    expect((await app.inject({method:'GET',url:'/api/admin/images',headers:{cookie}})).json().items.find((item:{id:string})=>item.id===asset.id)).toMatchObject({url:asset.url,previewUrl:asset.previewUrl})
+    const unknown=await app.inject({method:'GET',url:'/api/images/not-found'})
+    const privateResponse=await app.inject({method:'GET',url:asset.url,headers:{cookie}})
+    expect(privateResponse.statusCode).toBe(404); expect(privateResponse.body).toBe(unknown.body)
+    for(const response of [unknown,privateResponse,await app.inject({method:'HEAD',url:asset.url}),await app.inject({method:'GET',url:asset.previewUrl}),await app.inject({method:'HEAD',url:asset.previewUrl})]) {
+      expect(response.headers['cache-control']).toBe('no-store');expect(response.headers['x-content-type-options']).toBe('nosniff')
+    }
+    expect((await app.inject({method:'GET',url:asset.previewUrl})).statusCode).toBe(401)
+    const article=(await app.inject({method:'POST',url:'/api/admin/articles',headers:{cookie},payload:{title:'排期媒体',categoryId:'category-daily',image:asset.url,status:'scheduled',scheduledAt:'2026-07-22T00:00:00Z'}})).json()
+    expect((await app.inject({method:'GET',url:asset.url})).statusCode).toBe(404)
+    currentTime=new Date('2026-07-22T00:00:00Z')
+    const shown=await app.inject({method:'GET',url:asset.url});expect(shown.rawPayload).toEqual(png);expect(shown.headers['content-type']).toBe('image/png');expect(shown.headers['cache-control']).toBe('no-store')
+    expect((await app.inject({method:'HEAD',url:asset.url})).statusCode).toBe(200)
+    const album=(await app.inject({method:'POST',url:'/api/admin/albums',headers:{cookie},payload:{title:'共享',categoryId:'category-city'}})).json()
+    await app.inject({method:'POST',url:`/api/admin/albums/${album.id}/photos`,headers:{cookie},payload:{title:'共享照片',image:asset.url}})
+    await app.inject({method:'PATCH',url:`/api/admin/albums/${album.id}`,headers:{cookie},payload:{isPrivate:false}})
+    await app.inject({method:'POST',url:`/api/admin/articles/${article.id}/archive`,headers:{cookie}})
+    expect((await app.inject({method:'GET',url:asset.url})).statusCode).toBe(200)
+    await app.inject({method:'POST',url:`/api/admin/albums/${album.id}/archive`,headers:{cookie}})
+    expect((await app.inject({method:'GET',url:asset.url})).statusCode).toBe(404)
+    await app.inject({method:'POST',url:`/api/admin/albums/${album.id}/restore`,headers:{cookie}})
+    await app.inject({method:'PATCH',url:`/api/admin/albums/${album.id}`,headers:{cookie},payload:{isPrivate:true}})
+    expect((await app.inject({method:'GET',url:asset.url,headers:{cookie}})).statusCode).toBe(404)
+    await app.inject({method:'PATCH',url:`/api/admin/articles/${article.id}`,headers:{cookie},payload:{body:`![x](${asset.url})`,image:'/assets/cta.png',status:'published'}})
+    await app.inject({method:'POST',url:`/api/admin/articles/${article.id}/restore`,headers:{cookie}})
+    expect((await app.inject({method:'GET',url:asset.url})).statusCode).toBe(404)
+    expect((await app.inject({method:'GET',url:asset.previewUrl,headers:{cookie}})).rawPayload).toEqual(png)
+    for(const bad of [multipart(Buffer.from('not a raster')),multipart(png,'image/jpeg')]) expect((await app.inject({method:'POST',url:'/api/admin/images',headers:{cookie,...bad.headers},payload:bad.payload})).statusCode).toBe(415)
+  })
+
+  it.each(['GET','HEAD'] as const)('媒体 %s 的成功、未授权和不存在响应均携带安全头', async method => {
+    const form=multipart(png), uploaded=await app.inject({method:'POST',url:'/api/admin/images',headers:{cookie,...form.headers},payload:form.payload}), asset=uploaded.json()
+    expect(uploaded.statusCode).toBe(201)
+    const article=await app.inject({method:'POST',url:'/api/admin/articles',headers:{cookie},payload:{title:'媒体响应矩阵',categoryId:'category-daily',image:asset.url,status:'published'}})
+    expect(article.statusCode).toBe(201)
+    const cases=[
+      {url:asset.url,headers:{},status:200},
+      {url:'/api/images/not-found',headers:{},status:404},
+      {url:asset.previewUrl,headers:{cookie},status:200},
+      {url:asset.previewUrl,headers:{},status:401},
+      {url:'/api/admin/images/not-found',headers:{cookie},status:404},
+      {url:'/api/admin/images/not-found',headers:{},status:401},
+    ]
+    for (const entry of cases) {
+      const response=await app.inject({method,url:entry.url,headers:entry.headers})
+      expect(response.statusCode,`${method} ${entry.url}`).toBe(entry.status)
+      expect(response.headers['cache-control']).toBe('no-store')
+      expect(response.headers['x-content-type-options']).toBe('nosniff')
+      if(method==='HEAD') expect(response.rawPayload.length).toBe(0)
+      else if(entry.status===200) expect(response.rawPayload).toEqual(png)
+    }
+  })
+
+  it('拒绝超过大小上限的实际 multipart 上传', async () => {
+    const form=multipart(Buffer.alloc(MAX_IMAGE_BYTES+1)), response=await app.inject({method:'POST',url:'/api/admin/images',headers:{cookie,...form.headers},payload:form.payload})
+    expect(response.statusCode).toBe(413)
+  })
+
+  it('外部资产仅在公开引用时重定向，外部 URL 原样提供给编辑部', async () => {
+    const list=(await app.inject({method:'GET',url:'/api/admin/images',headers:{cookie}})).json().items as {id:string;kind:string;url:string;previewUrl:string}[]
+    const external=list.find(item=>item.kind==='external' && item.url==='/assets/cta.png')!
+    expect(external.previewUrl).toBe(external.url)
+    const article=(await app.inject({method:'POST',url:'/api/admin/articles',headers:{cookie},payload:{title:'外部图片测试',categoryId:'category-daily',image:external.url,status:'published'}})).json()
+    const response=await app.inject({method:'GET',url:`/api/images/${external.id}`})
+    expect(response.statusCode).toBe(302);expect(response.headers.location).toBe(external.url);expect(response.headers['cache-control']).toBe('no-store')
+    expect((await app.inject({method:'GET',url:`/api/public/articles/${article.slug}`})).json().image).toBe(external.url)
+  })
+
+  it('真实本地存储校验读取数据并拒绝历史错误类型', async () => {
+    const dir=mkdtempSync(join(tmpdir(),'linjian-media-')), dbPath=join(dir,'test.sqlite'), uploadDir=join(dir,'uploads')
+    const local=await buildApp({databasePath:dbPath,uploadDir,nodeEnv:'test',seed:true,initializeOwner:{email:'test@test.test',password:'test'}})
+    try {
+      const login=await local.inject({method:'POST',url:'/api/auth/login',payload:{email:'test@test.test',password:'test'}}), localCookie=`${login.cookies[0]!.name}=${login.cookies[0]!.value}`,form=multipart(png)
+      const asset=(await local.inject({method:'POST',url:'/api/admin/images',headers:{cookie:localCookie,...form.headers},payload:form.payload})).json()
+      await local.inject({method:'POST',url:'/api/admin/articles',headers:{cookie:localCookie},payload:{title:'本地图片',categoryId:'category-daily',status:'published',image:asset.url}})
+      expect((await local.inject({method:'GET',url:asset.url})).rawPayload).toEqual(png)
+      writeFileSync(join(uploadDir,asset.path),'innocuous text')
+      expect((await local.inject({method:'GET',url:asset.url})).statusCode).toBe(404)
+      expect((await local.inject({method:'GET',url:asset.previewUrl,headers:{cookie:localCookie}})).statusCode).toBe(404)
+      writeFileSync(join(uploadDir,asset.path),Buffer.concat([png,Buffer.alloc(MAX_IMAGE_BYTES)]))
+      for (const url of [asset.url,asset.previewUrl]) {
+        const response=await local.inject({method:'GET',url,headers:{cookie:localCookie}})
+        expect(response.statusCode).toBe(404)
+        expect(response.headers['cache-control']).toBe('no-store')
+        expect(response.headers['x-content-type-options']).toBe('nosniff')
+      }
+    } finally {await local.close();rmSync(dir,{recursive:true,force:true})}
+  })
+
+  it('订阅规范化后数据库仅保留一行', async () => {
+    const dir=mkdtempSync(join(tmpdir(),'linjian-subscriptions-')), dbPath=join(dir,'test.sqlite'), isolated=await buildApp({databasePath:dbPath,uploadDir:'memory',nodeEnv:'test',rateLimit:false})
+    try {
+      const responses=await Promise.all([' Reader@Example.COM ','reader@example.com'].map(email=>isolated.inject({method:'POST',url:'/api/public/subscriptions',payload:{email}})))
+      expect(responses.map(response=>[response.statusCode,response.body])).toEqual([[204,''],[204,'']])
+      const db=new DatabaseSync(dbPath);try{expect(db.prepare('SELECT email FROM subscriptions').all()).toEqual([{email:'reader@example.com'}])}finally{db.close()}
+    } finally {await isolated.close();rmSync(dir,{recursive:true,force:true})}
   })
 
   it('照片可排序并跨相册移动且保持身份', async () => {
@@ -245,9 +366,8 @@ describe('个人刊物 HTTP API', () => {
     const isolated = await buildApp({ databasePath: ':memory:', storage: new FailingDeleteStorage(), nodeEnv: 'test', seed: true, initializeOwner: { email: 'test@test.test', password: 'test' } })
     const login = await isolated.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'test@test.test', password: 'test' } })
     const isolatedCookie = `${login.cookies[0]!.name}=${login.cookies[0]!.value}`
-    const boundary = '----rollback-test'
-    const payload = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="pixel.png"\r\nContent-Type: image/png\r\n\r\nPNGDATA\r\n--${boundary}--\r\n`)
-    const upload = await isolated.inject({ method: 'POST', url: '/api/admin/images', headers: { cookie: isolatedCookie, 'content-type': `multipart/form-data; boundary=${boundary}` }, payload })
+    const form = multipart(png)
+    const upload = await isolated.inject({ method: 'POST', url: '/api/admin/images', headers: { cookie: isolatedCookie, ...form.headers }, payload: form.payload })
     expect((await isolated.inject({ method: 'DELETE', url: `/api/admin/images/${upload.json().id}`, headers: { cookie: isolatedCookie } })).statusCode).toBe(500)
     expect((await isolated.inject({ method: 'GET', url: '/api/admin/images', headers: { cookie: isolatedCookie } })).json().items.some((asset: { id: string }) => asset.id === upload.json().id)).toBe(true)
     await isolated.close()
@@ -258,9 +378,10 @@ describe('个人刊物 HTTP API', () => {
     const first = await limited.inject({ method: 'POST', url: '/api/public/subscriptions', payload: { email: 'same@example.com' } })
     const second = await limited.inject({ method: 'POST', url: '/api/public/subscriptions', payload: { email: 'same@example.com' } })
     const blocked = await limited.inject({ method: 'POST', url: '/api/public/subscriptions', payload: { email: 'other@example.com' } })
-    expect(first.statusCode).toBe(201)
-    expect(second.statusCode).toBe(200)
-    expect(second.json().id).toBe(first.json().id)
+    expect(first.statusCode).toBe(204)
+    expect(second.statusCode).toBe(204)
+    expect(first.body).toBe('')
+    expect(second.body).toBe('')
     expect(blocked.statusCode).toBe(429)
     await limited.close()
   })
@@ -302,6 +423,10 @@ describe('个人刊物 HTTP API', () => {
     await app.inject({ method: 'PATCH', url: `/api/admin/albums/${album.id}`, headers: { cookie }, payload: { isPrivate: false } })
     await app.inject({ method: 'POST', url: `/api/admin/albums/${album.id}/archive`, headers: { cookie } })
     expect((await app.inject({ method: 'DELETE', url: `/api/admin/photos/${photo.id}`, headers: { cookie } })).statusCode).toBe(204)
+    expect((await app.inject({ method: 'PATCH', url: `/api/admin/albums/${album.id}`, headers: { cookie }, payload: { title: '归档后编辑' } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: `/api/admin/albums/${album.id}/restore`, headers: { cookie } })).statusCode).toBe(409)
+    expect((await app.inject({ method: 'PATCH', url: `/api/admin/albums/${album.id}`, headers: { cookie }, payload: { isPrivate: true } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: `/api/admin/albums/${album.id}/restore`, headers: { cookie } })).statusCode).toBe(200)
   })
 
   it('数据库不变量通过所有相册操作路径保持封面和公开非空约束', async () => {

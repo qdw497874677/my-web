@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { contentApi } from "./repository";
+import { ApiError, contentApi } from "./repository";
 import { ContentContext, type ContentValue } from "./content-context";
 import type {
   Album,
@@ -20,6 +20,7 @@ const defaultPresentation: CollectionPresentation = {
   defaultTheme: "stamp",
   enabledThemes: ["stamp", "editorial", "holographic", "cinema", "boarding"],
 };
+const adminRefreshTimeoutMs = 15_000;
 
 export function ContentProvider({
   children,
@@ -44,9 +45,12 @@ export function ContentProvider({
       useState(defaultPresentation),
     [images, setImages] = useState<ImageAsset[]>([]),
     [adminLoading, setAdminLoading] = useState(scope === "editorial"),
-    [adminError, setAdminError] = useState("");
+    [adminError, setAdminError] = useState(""),
+    [adminRefreshError, setAdminRefreshError] = useState(""),
+    [adminRefreshing, setAdminRefreshing] = useState(false);
   const generation = useRef(0),
     adminRequest = useRef(0),
+    adminController = useRef<AbortController | null>(null),
     adminLoadingRef = useRef(scope === "editorial"),
     active = useRef(false);
   const loadPublic = useCallback(async () => {
@@ -79,19 +83,33 @@ export function ContentProvider({
     if (!active.current) return;
     const expected = generation.current,
       request = ++adminRequest.current;
+    adminController.current?.abort();
+    const controller = new AbortController();
+    adminController.current = controller;
+    const initial = adminLoadingRef.current;
+    if (!initial) setAdminRefreshing(true);
     const isCurrent = () =>
       active.current &&
       expected === generation.current &&
       request === adminRequest.current;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
     try {
-      const [nextCategories, articles, albums, collections, nextImages] =
-        await Promise.all([
-          contentApi.categories(),
-          contentApi.articles(),
-          contentApi.albums(),
-          contentApi.collections(),
-          contentApi.images(),
+      const requests = Promise.all([
+          contentApi.categories(controller.signal),
+          contentApi.articles(controller.signal),
+          contentApi.albums(controller.signal),
+          contentApi.collections(controller.signal),
+          contentApi.images(controller.signal),
         ]);
+      const aborted = new Promise<never>((_, reject) => {
+        onAbort = () => reject(controller.signal.reason);
+        controller.signal.addEventListener("abort", onAbort, { once: true });
+      });
+      if (!initial)
+        timeout = setTimeout(() => controller.abort(new Error("编辑部刷新超时，请重试")), adminRefreshTimeoutMs);
+      const [nextCategories, articles, albums, collections, nextImages] =
+        await Promise.race([requests, aborted]);
       if (!isCurrent()) return;
       setCategories(nextCategories);
       setAdminArticles(articles);
@@ -100,15 +118,24 @@ export function ContentProvider({
       setAdminCollectionPresentation(collections.presentation);
       setImages(nextImages);
       setAdminError("");
+      setAdminRefreshError("");
     } catch (error) {
-      if (isCurrent() && adminLoadingRef.current)
-        setAdminError(error instanceof Error ? error.message : "编辑部加载失败");
-      throw error;
+      const cause = controller.signal.aborted ? controller.signal.reason : error;
+      controller.abort();
+      if (isCurrent()) {
+        const message = cause instanceof Error ? cause.message : "编辑部加载失败";
+        if (initial) setAdminError(message);
+        else setAdminRefreshError(cause instanceof ApiError && cause.status === 401 ? "" : message);
+      }
     } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+      if (onAbort) controller.signal.removeEventListener("abort", onAbort);
+      if (adminController.current === controller) adminController.current = null;
       if (isCurrent() && adminLoadingRef.current) {
         adminLoadingRef.current = false;
         setAdminLoading(false);
       }
+      if (isCurrent()) setAdminRefreshing(false);
     }
   }, []);
   const reloadAdmin = useCallback(async () => {
@@ -116,11 +143,9 @@ export function ContentProvider({
     adminLoadingRef.current = true;
     setAdminLoading(true);
     setAdminError("");
-    try {
-      await loadAdminData();
-    } catch {
-      // The current request records its failure in adminError.
-    }
+    setAdminRefreshError("");
+    setAdminRefreshing(false);
+    await loadAdminData();
   }, [loadAdminData, scope]);
   useEffect(() => {
     active.current = true;
@@ -130,9 +155,20 @@ export function ContentProvider({
     return () => {
       active.current = false;
       generation.current++;
+      adminController.current?.abort();
     };
   }, [loadPublic, reloadAdmin, scope]);
-  const refreshAdmin = async () => loadAdminData();
+  const refreshAdmin = async () => {
+    if (scope === "editorial") await loadAdminData();
+  };
+  const persist = async (write: () => Promise<unknown>) => {
+    const expected = generation.current;
+    await write();
+    if (active.current && expected === generation.current)
+      void refreshAdmin().catch((error: unknown) => {
+        console.error("编辑部刷新发生意外错误", error);
+      });
+  };
   const value: ContentValue = {
     publicArticles,
     publicAlbums,
@@ -149,17 +185,18 @@ export function ContentProvider({
     images,
     adminLoading,
     adminError,
+    adminRefreshError,
+    adminRefreshing,
     reloadAdmin,
+    retryAdminRefresh: refreshAdmin,
     subscribe: async (email) => {
       await contentApi.subscribe(email);
     },
     createCategory: async (name) => {
-      await contentApi.createCategory(name);
-      await refreshAdmin();
+      await persist(() => contentApi.createCategory(name));
     },
     updateCategory: async (id, name) => {
-      await contentApi.updateCategory(id, name);
-      await refreshAdmin();
+      await persist(() => contentApi.updateCategory(id, name));
     },
     moveCategory: async (id, offset) => {
       const index = categories.findIndex((item) => item.id === id),
@@ -167,48 +204,37 @@ export function ContentProvider({
       if (index < 0 || target < 0 || target >= categories.length) return;
       const ids = categories.map((item) => item.id);
       [ids[index], ids[target]] = [ids[target], ids[index]];
-      await contentApi.orderCategories(ids);
-      await refreshAdmin();
+      await persist(() => contentApi.orderCategories(ids));
     },
     deleteCategory: async (id) => {
-      await contentApi.deleteCategory(id);
-      await refreshAdmin();
+      await persist(() => contentApi.deleteCategory(id));
     },
     createArticle: async (title, categoryId, imageAssetId) => {
-      await contentApi.createArticle(title, categoryId, imageAssetId);
-      await refreshAdmin();
+      await persist(() => contentApi.createArticle(title, categoryId, imageAssetId));
     },
     updateArticle: async (id, input) => {
-      await contentApi.updateArticle(id, input);
-      await refreshAdmin();
+      await persist(() => contentApi.updateArticle(id, input));
     },
     archiveArticle: async (id, archived) => {
-      await contentApi.archiveArticle(id, archived);
-      await refreshAdmin();
+      await persist(() => contentApi.archiveArticle(id, archived));
     },
     createAlbum: async (title, categoryId) => {
-      await contentApi.createAlbum(title, categoryId);
-      await refreshAdmin();
+      await persist(() => contentApi.createAlbum(title, categoryId));
     },
     updateAlbum: async (id, input) => {
-      await contentApi.updateAlbum(id, input);
-      await refreshAdmin();
+      await persist(() => contentApi.updateAlbum(id, input));
     },
     archiveAlbum: async (id, archived) => {
-      await contentApi.archiveAlbum(id, archived);
-      await refreshAdmin();
+      await persist(() => contentApi.archiveAlbum(id, archived));
     },
     createPhoto: async (albumId, input) => {
-      await contentApi.createPhoto(albumId, input);
-      await refreshAdmin();
+      await persist(() => contentApi.createPhoto(albumId, input));
     },
     updatePhoto: async (id, input) => {
-      await contentApi.updatePhoto(id, input);
-      await refreshAdmin();
+      await persist(() => contentApi.updatePhoto(id, input));
     },
     deletePhoto: async (id) => {
-      await contentApi.deletePhoto(id);
-      await refreshAdmin();
+      await persist(() => contentApi.deletePhoto(id));
     },
     movePhotoOrder: async (albumId, id, offset) => {
       const album = adminAlbums.find((item) => item.id === albumId),
@@ -218,24 +244,19 @@ export function ContentProvider({
         return;
       const ids = album.photos.map((item) => item.id);
       [ids[index], ids[target]] = [ids[target], ids[index]];
-      await contentApi.orderPhotos(albumId, ids);
-      await refreshAdmin();
+      await persist(() => contentApi.orderPhotos(albumId, ids));
     },
     movePhoto: async (id, albumId) => {
-      await contentApi.movePhoto(id, albumId);
-      await refreshAdmin();
+      await persist(() => contentApi.movePhoto(id, albumId));
     },
     uploadImage: async (file) => {
-      await contentApi.uploadImage(file);
-      await refreshAdmin();
+      await persist(() => contentApi.uploadImage(file));
     },
     deleteImage: async (id) => {
-      await contentApi.deleteImage(id);
-      await refreshAdmin();
+      await persist(() => contentApi.deleteImage(id));
     },
     saveCollections: async (items, presentation) => {
-      await contentApi.saveCollections(items, presentation);
-      await refreshAdmin();
+      await persist(() => contentApi.saveCollections(items, presentation));
     },
   };
   return (

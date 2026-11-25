@@ -18,6 +18,7 @@ import { LoginPage } from "./workbench/LoginPage";
 import { OwnerSessionProvider, RequireOwner } from "./workbench/OwnerSessionProvider";
 import { WorkbenchShell } from "./workbench/WorkbenchShell";
 import { useOwnerSession } from "./workbench/owner-session";
+import "./editorial-notice.css";
 
 const editorialPages = [
   { id: "dashboard", to: "/admin/dashboard", label: "总览", title: "运营总览", viewTo: "/", Page: DashboardPage },
@@ -49,7 +50,7 @@ function WorkbenchLayout() {
 }
 
 function EditorialOutlet() {
-  const { adminLoading, adminError, reloadAdmin } = useContent();
+  const { adminLoading, adminError, reloadAdmin, adminRefreshError, adminRefreshing, retryAdminRefresh } = useContent();
   if (adminLoading) return <p role="status">正在加载刊物编辑数据…</p>;
   if (adminError) return (
     <div>
@@ -57,7 +58,17 @@ function EditorialOutlet() {
       <button type="button" className="ghost" onClick={() => void reloadAdmin()}>重新加载</button>
     </div>
   );
-  return <Outlet />;
+  return (
+    <>
+      {adminRefreshError && (
+        <div className="editorialRefreshNotice">
+          <p role="status">已保存，列表未刷新{adminRefreshing ? "，正在刷新…" : ""}</p>
+          <button type="button" className="ghost" disabled={adminRefreshing} onClick={() => void retryAdminRefresh()}>重试刷新</button>
+        </div>
+      )}
+      <Outlet />
+    </>
+  );
 }
 
 function AppRoutes() {

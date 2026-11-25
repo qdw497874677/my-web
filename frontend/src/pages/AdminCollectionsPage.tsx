@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CollectionCard } from "../components/CollectionCard";
 import { MixedHeadline } from "../components/editorial";
 import { Button, SelectField } from "../components/ui";
@@ -246,15 +246,14 @@ export function AdminCollectionsPage() {
     adminCollectionPresentation,
     saveCollections,
   } = useContent();
-  const [selected, setSelected] = useState<CollectionReference[]>([]);
-  const [presentation, setPresentation] = useState<CollectionPresentation>({
-    defaultTheme: "stamp",
-    enabledThemes: ["stamp", "editorial", "holographic", "cinema", "boarding"],
-  });
+  const [selected, setSelected] = useState<CollectionReference[]>(() => adminCollections.map(toReference));
+  const [presentation, setPresentation] = useState<CollectionPresentation>(adminCollectionPresentation);
   const [message, setMessage] = useState("");
+  const edits = useRef({ selected: 0, presentation: 0 });
+  const dirty = useRef({ selected: false, presentation: false });
   useEffect(() => {
-    setSelected(adminCollections.map(toReference));
-    setPresentation(adminCollectionPresentation);
+    if (!dirty.current.selected) setSelected(adminCollections.map(toReference));
+    if (!dirty.current.presentation) setPresentation(adminCollectionPresentation);
   }, [adminCollections, adminCollectionPresentation]);
   const catalog = useMemo(
     () => buildCollectionCatalog(adminArticles, adminAlbums),
@@ -263,8 +262,12 @@ export function AdminCollectionsPage() {
   const preview = previewCollection(selected, catalog, adminCollections);
   const save = async () => {
     setMessage("");
+    const savedEdits = { ...edits.current };
     try {
       await saveCollections(selected, presentation);
+      // A response may arrive after the user has already started another draft.
+      if (edits.current.selected === savedEdits.selected) dirty.current.selected = false;
+      if (edits.current.presentation === savedEdits.presentation) dirty.current.presentation = false;
       setMessage("收藏与展示策略已保存");
     } catch (error) {
       setMessage(
@@ -285,31 +288,41 @@ export function AdminCollectionsPage() {
       <CollectionPresentationPanel
         presentation={presentation}
         preview={preview}
-        onChange={setPresentation}
+        onChange={(next) => {
+          dirty.current.presentation = true;
+          edits.current.presentation++;
+          setPresentation(next);
+        }}
       />
       <div className="workspace">
         <CollectionCatalogPanel
           catalog={catalog}
           selected={selected}
-          onToggle={(reference) =>
+          onToggle={(reference) => {
+            dirty.current.selected = true;
+            edits.current.selected++;
             setSelected((current) =>
               toggleCollectionReference(current, reference),
-            )
-          }
+            );
+          }}
         />
         <CollectionOrderPanel
           selected={selected}
           message={message}
-          onChange={(index, changes) =>
+          onChange={(index, changes) => {
+            dirty.current.selected = true;
+            edits.current.selected++;
             setSelected((current) =>
               updateCollectionReference(current, index, changes),
-            )
-          }
-          onMove={(index, offset) =>
+            );
+          }}
+          onMove={(index, offset) => {
+            dirty.current.selected = true;
+            edits.current.selected++;
             setSelected((current) =>
               moveCollectionReference(current, index, offset),
-            )
-          }
+            );
+          }}
           onSave={() => void save()}
         />
       </div>

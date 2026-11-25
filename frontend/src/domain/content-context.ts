@@ -27,7 +27,10 @@ export interface ContentValue {
   images: ImageAsset[];
   adminLoading: boolean;
   adminError: string;
+  adminRefreshError: string;
+  adminRefreshing: boolean;
   reloadAdmin: () => Promise<void>;
+  retryAdminRefresh: () => Promise<void>;
   subscribe: (email: string) => Promise<void>;
   createCategory: (name: string) => Promise<void>;
   updateCategory: (id: string, name: string) => Promise<void>;

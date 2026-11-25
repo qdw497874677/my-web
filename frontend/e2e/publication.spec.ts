@@ -265,9 +265,10 @@ test('排期按上海本地时间显示并保存为 +08:00 ISO', async ({ page }
 })
 
 test('栏目、图片资产和照片可通过编辑部管理', async ({ page }, testInfo) => {
-  const suffix = testInfo.project.name
+  const suffix = `${testInfo.project.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`
   const category = `测试栏目-${suffix}`
   const album = `测试相册-${suffix}`
+  const filename = `pixel-${suffix}.png`
   await authenticate(page.context())
   await page.goto('/admin/dashboard')
   await page.getByRole('button', { name: '管理栏目' }).click()
@@ -277,25 +278,105 @@ test('栏目、图片资产和照片可通过编辑部管理', async ({ page }, 
 
   await page.goto('/admin/albums')
   await page.getByRole('button', { name: '管理图片' }).click()
-  await page.getByLabel('上传图片').setInputFiles({ name: `pixel-${suffix}.png`, mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') })
-  await page.getByRole('button', { name: '上传资产' }).click()
-  await expect(page.getByText(`pixel-${suffix}.png`)).toBeVisible()
-  await page.getByRole('button', { name: '关闭图片管理' }).click()
+  await page.getByLabel('上传图片').setInputFiles({ name: filename, mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') })
+  const [upload] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/api/admin/images') && response.request().method() === 'POST'),
+    page.getByRole('button', { name: '上传资产' }).click(),
+  ])
+  expect(upload.status()).toBe(201)
+  const { id: imageId } = await upload.json() as { id: string }
+  const image = page.locator('.catalogItem').filter({ hasText: filename }).locator('img')
+  await expect(image).toBeVisible()
+  await expect(image).toHaveAttribute('src', `/api/admin/images/${imageId}`)
+  await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0)
+  expect((await page.request.get(`/api/admin/images/${imageId}`)).status()).toBe(200)
+  const anonymous = await playwrightRequest.newContext({ baseURL: 'http://127.0.0.1:4187' })
+  try {
+    expect((await anonymous.get(`/api/admin/images/${imageId}`)).status()).toBe(401)
+    expect((await anonymous.get(`/api/images/${imageId}`)).status()).toBe(404)
+    expect((await page.request.get(`/api/images/${imageId}`)).status()).toBe(404)
+    await page.getByRole('button', { name: '关闭图片管理' }).click()
 
-  await page.getByRole('button', { name: '新建相册' }).click()
-  await page.getByLabel('相册标题').fill(album)
-  await page.getByLabel('栏目').selectOption({ label: category })
-  await page.getByRole('button', { name: '创建相册' }).click()
-  const card = page.locator('.adminAlbum').filter({ hasText: album })
-  await card.getByRole('button', { name: '编辑' }).click()
-  await page.getByRole('button', { name: '新增照片' }).click()
-  await page.getByLabel('照片标题').fill('一像素照片')
-  await page.getByLabel('照片图片', { exact: true }).selectOption({ label: `pixel-${suffix}.png` })
-  await page.getByRole('button', { name: '保存照片' }).click()
-  await expect(page.locator('.catalogItem strong').filter({ hasText: '一像素照片' })).toBeVisible()
-  await page.getByText('公开相册').click()
-  const albumId = await card.getAttribute('data-album-id')
-  await page.getByRole('button', { name: '保存相册' }).click()
-  await page.goto(`/albums/${albumId}?photo=0`)
-  await expect(page.getByRole('heading', { name: album })).toBeVisible()
+    await page.getByRole('button', { name: '新建相册' }).click()
+    await page.getByLabel('相册标题').fill(album)
+    await page.getByLabel('栏目').selectOption({ label: category })
+    await page.getByRole('button', { name: '创建相册' }).click()
+    const card = page.locator('.adminAlbum').filter({ hasText: album })
+    await card.getByRole('button', { name: '编辑' }).click()
+    await page.getByRole('button', { name: '新增照片' }).click()
+    await page.getByLabel('照片标题').fill('一像素照片')
+    await page.getByLabel('照片图片', { exact: true }).selectOption({ label: filename })
+    await page.getByRole('button', { name: '保存照片' }).click()
+    await expect(page.locator('.catalogItem strong').filter({ hasText: '一像素照片' })).toBeVisible()
+    expect((await anonymous.get(`/api/images/${imageId}`)).status()).toBe(404)
+    await page.getByText('公开相册').click()
+    const albumId = await card.getAttribute('data-album-id')
+    expect(albumId).toBeTruthy()
+    await page.getByRole('button', { name: '保存相册' }).click()
+    await expect(page.getByRole('dialog', { name: '编辑相册' })).not.toBeVisible()
+    expect((await anonymous.get(`/api/images/${imageId}`)).status()).toBe(200)
+    await page.goto(`/albums/${albumId}?photo=0`)
+    await expect(page.getByRole('heading', { name: album })).toBeVisible()
+    expect((await page.request.patch(`/api/admin/albums/${albumId}`, { data: { isPrivate: true } })).ok()).toBe(true)
+    expect((await anonymous.get(`/api/images/${imageId}`)).status()).toBe(404)
+  } finally {
+    await anonymous.dispose()
+  }
+})
+
+test('创建成功但列表刷新失败时可重试而不重复创建', async ({ page }, testInfo) => {
+  const title = `刷新失败文章-${testInfo.project.name}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  await authenticate(page.context())
+  await page.goto('/admin/articles')
+  await page.getByRole('button', { name: '新建文章' }).click()
+  const dialog = page.getByRole('dialog', { name: '新建文章草稿' })
+  await dialog.getByLabel('文章标题').fill(title)
+
+  let postCount = 0
+  let postStatus = 0
+  let failNextGet = false
+  let failedGetCount = 0
+  let getCount = 0
+  let refreshGetStarted = false
+  let releaseRefresh = () => {}
+  const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve })
+  await page.route('**/api/admin/articles', async route => {
+    const method = route.request().method()
+    if (method === 'POST') {
+      postCount++
+      const response = await route.fetch()
+      postStatus = response.status()
+      if (response.ok()) failNextGet = true
+      await route.fulfill({ response })
+    } else if (method === 'GET' && failNextGet) {
+      getCount++
+      failNextGet = false
+      refreshGetStarted = true
+      await refreshGate
+      failedGetCount++
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: '测试列表刷新失败' }) })
+    } else {
+      if (method === 'GET') getCount++
+      await route.continue()
+    }
+  })
+  try {
+    await dialog.getByRole('button', { name: '创建草稿' }).click()
+    await expect.poll(() => refreshGetStarted).toBe(true)
+    await expect(dialog).not.toBeVisible()
+    expect(postCount).toBe(1)
+    expect(postStatus).toBe(201)
+    expect(getCount).toBe(1)
+    expect(failedGetCount).toBe(0)
+    releaseRefresh()
+    await expect(page.getByText('已保存，列表未刷新')).toBeVisible()
+    expect(failedGetCount).toBe(1)
+    await page.getByRole('button', { name: '重试刷新' }).click()
+    await expect(page.getByRole('row').filter({ hasText: title })).toBeVisible()
+    expect(getCount).toBe(2)
+    expect(postCount).toBe(1)
+  } finally {
+    releaseRefresh()
+    await page.unroute('**/api/admin/articles')
+  }
 })

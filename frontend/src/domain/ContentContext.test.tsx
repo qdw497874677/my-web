@@ -3,9 +3,10 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ContentProvider } from "./ContentContext";
 import { ContentContext, type ContentValue } from "./content-context";
-import { contentApi } from "./repository";
+import { ApiError, contentApi } from "./repository";
 
 vi.mock("./repository", () => ({
+  ApiError: class ApiError extends Error { status: number; constructor(status: number, message: string) { super(message); this.status = status; } },
   contentApi: {
     publicArticles: vi.fn(), publicAlbums: vi.fn(), publicCollections: vi.fn(),
     categories: vi.fn(), articles: vi.fn(), albums: vi.fn(),
@@ -90,10 +91,123 @@ describe("ContentProvider scopes", () => {
     vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
     let oldRequest!: Promise<void>;
     act(() => { oldRequest = current.reloadAdmin(); });
+    const oldSignal = vi.mocked(contentApi.categories).mock.lastCall?.[0];
     await act(async () => current.reloadAdmin());
+    expect(oldSignal?.aborted).toBe(true);
     expect(current.adminLoading).toBe(false);
     await act(async () => { resolveOld([{ id: "old", name: "old" }] as never); await oldRequest; });
     expect(current.categories).toEqual([]);
     expect(current.adminError).toBe("");
+  });
+
+  it("keeps saved data on refresh failure and retries reads without replaying the write", async () => {
+    const previous = [{ id: "article-1", title: "before" }] as never;
+    vi.mocked(contentApi.articles).mockResolvedValueOnce(previous);
+    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.adminLoading).toBe(false));
+    vi.mocked(contentApi.categories).mockRejectedValueOnce(new Error("offline"));
+    await act(async () => current.updateArticle("article-1", { title: "saved" }));
+    expect(current.adminRefreshError).toBe("offline");
+    expect(current.adminLoading).toBe(false);
+    expect(current.adminError).toBe("");
+    expect(current.adminArticles).toEqual(previous);
+    await act(async () => current.retryAdminRefresh());
+    expect(current.adminRefreshError).toBe("");
+    expect(contentApi.updateArticle).toHaveBeenCalledTimes(1);
+    expect(contentApi.categories).toHaveBeenCalledTimes(3);
+  });
+
+  it("resolves a successful write while its refresh is pending, then reports its failure", async () => {
+    const previous = [{ id: "article-1", title: "before" }] as never;
+    vi.mocked(contentApi.articles).mockResolvedValueOnce(previous);
+    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.adminLoading).toBe(false));
+    let rejectRefresh!: (error: Error) => void;
+    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((_, reject) => { rejectRefresh = reject; }));
+    let resolved = false;
+    await act(async () => {
+      await current.updateArticle("article-1", { title: "saved" });
+      resolved = true;
+    });
+    expect(resolved).toBe(true);
+    expect(current.adminRefreshing).toBe(true);
+    expect(current.adminArticles).toEqual(previous);
+    await act(async () => { rejectRefresh(new Error("offline")); });
+    expect(current.adminRefreshError).toBe("offline");
+    expect(current.adminRefreshing).toBe(false);
+    await act(async () => current.retryAdminRefresh());
+    expect(current.adminRefreshError).toBe("");
+    expect(contentApi.updateArticle).toHaveBeenCalledTimes(1);
+  });
+
+  it("times out a stuck background refresh and permits a read-only retry", async () => {
+    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.adminLoading).toBe(false));
+    vi.useFakeTimers();
+    try {
+      vi.mocked(contentApi.categories).mockImplementationOnce((signal) => new Promise((_, reject) => {
+        signal?.addEventListener("abort", () => reject(new ApiError(0, "aborted")), { once: true });
+      }));
+      await act(async () => current.updateArticle("id", {}));
+      const signal = vi.mocked(contentApi.categories).mock.lastCall?.[0];
+      expect(signal).toBeDefined();
+      for (const method of [contentApi.articles, contentApi.albums, contentApi.collections, contentApi.images]) {
+        expect(vi.mocked(method).mock.lastCall?.[0]).toBe(signal);
+      }
+      expect(current.adminRefreshing).toBe(true);
+      await act(async () => vi.advanceTimersByTimeAsync(15_000));
+      expect(signal?.aborted).toBe(true);
+      expect(current.adminRefreshing).toBe(false);
+      expect(current.adminRefreshError).toBe("编辑部刷新超时，请重试");
+      await act(async () => current.retryAdminRefresh());
+      expect(vi.mocked(contentApi.categories).mock.lastCall?.[0]).not.toBe(signal);
+      expect(current.adminRefreshError).toBe("");
+      expect(contentApi.updateArticle).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts the initial admin load on teardown even when a mock ignores cancellation", async () => {
+    let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.categories>>) => void;
+    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    const view = render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    const signal = vi.mocked(contentApi.categories).mock.lastCall?.[0];
+    expect(signal?.aborted).toBe(false);
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { resolveOld([{ id: "old", name: "old" }] as never); });
+  });
+
+  it("rejects an actual write failure without refreshing", async () => {
+    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.adminLoading).toBe(false));
+    vi.mocked(contentApi.updateArticle).mockRejectedValueOnce(new Error("write failed"));
+    await expect(current.updateArticle("id", {})).rejects.toThrow("write failed");
+    expect(contentApi.categories).toHaveBeenCalledTimes(1);
+    expect(current.adminRefreshError).toBe("");
+  });
+
+  it("suppresses a 401 background refresh warning", async () => {
+    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.adminLoading).toBe(false));
+    vi.mocked(contentApi.categories).mockRejectedValueOnce(new ApiError(401, "unauthorized"));
+    await act(async () => current.updateArticle("id", {}));
+    await waitFor(() => expect(current.adminRefreshing).toBe(false));
+    expect(current.adminRefreshError).toBe("");
+  });
+
+  it("ignores an older refresh failure after a newer refresh succeeds", async () => {
+    render(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.adminLoading).toBe(false));
+    let rejectOld!: (error: Error) => void;
+    vi.mocked(contentApi.categories).mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject; }));
+    let old!: Promise<void>;
+    act(() => { old = current.retryAdminRefresh(); });
+    expect(current.adminRefreshing).toBe(true);
+    await act(async () => current.retryAdminRefresh());
+    await act(async () => { rejectOld(new Error("obsolete")); await old; });
+    expect(current.adminRefreshError).toBe("");
+    expect(current.adminRefreshing).toBe(false);
   });
 });

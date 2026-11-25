@@ -109,6 +109,7 @@ export interface ImageAsset {
   createdAt: string;
   kind?: "local" | "external";
   url?: string;
+  previewUrl?: string;
 }
 export type ArticleInput = Pick<
   Article,

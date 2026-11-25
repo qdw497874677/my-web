@@ -21,6 +21,28 @@ const collectionHref = (item: CollectionView) =>
   item.sourceType === "photo" && item.photoId
     ? { ...item, href: `/albums/${item.albumId}?photo=${item.photoId}` }
     : item;
+const adminImage = (url: string) =>
+  typeof url === "string" && /^\/api\/images\/asset-[^/?#]+$/.test(url)
+    ? url.replace("/api/images/", "/api/admin/images/")
+    : url;
+const adminArticle = (item: Article): Article => ({ ...item, image: adminImage(item.image) });
+const adminPhoto = (item: Photo): Photo => ({ ...item, image: adminImage(item.image) });
+const adminAlbum = (item: Album): Album => ({
+  ...item,
+  photos: item.photos?.map(adminPhoto),
+});
+const adminCollection = (item: CollectionView): CollectionView =>
+  collectionHref({ ...item, image: adminImage(item.image) });
+const adminCatalog = (result: CollectionCatalog): CollectionCatalog => ({
+  ...result,
+  articles: result.articles?.map(adminArticle),
+  albums: result.albums?.map(adminAlbum),
+  items: result.items.map(adminCollection),
+});
+const adminAsset = (item: ImageAsset): ImageAsset => ({
+  ...item,
+  url: item.previewUrl ?? item.url,
+});
 
 export const contentApi = {
   publicArticles: async () =>
@@ -55,8 +77,8 @@ export const contentApi = {
       body: json({ email, password }),
     }),
   logout: () => fetchApi<void>("/api/auth/logout", { method: "POST" }),
-  categories: async () =>
-    (await fetchApi<{ items: Category[] }>("/api/admin/categories")).items,
+  categories: async (signal?: AbortSignal) =>
+    (await fetchApi<{ items: Category[] }>("/api/admin/categories", { signal })).items,
   createCategory: (name: string) =>
     fetchApi<Category>("/api/admin/categories", {
       method: "POST",
@@ -76,8 +98,8 @@ export const contentApi = {
     ).items,
   deleteCategory: (id: string) =>
     fetchApi<void>(`/api/admin/categories/${id}`, { method: "DELETE" }),
-  articles: async () =>
-    (await fetchApi<{ items: Article[] }>("/api/admin/articles")).items,
+  articles: async (signal?: AbortSignal) =>
+    (await fetchApi<{ items: Article[] }>("/api/admin/articles", { signal })).items.map(adminArticle),
   createArticle: (title: string, categoryId: string, imageAssetId?: string) =>
     fetchApi<Article>("/api/admin/articles", {
       method: "POST",
@@ -88,19 +110,19 @@ export const contentApi = {
         excerpt: "这是一篇刚刚建立的文章草稿。",
         ...(imageAssetId ? { imageAssetId } : {}),
       }),
-    }),
+    }).then(adminArticle),
   updateArticle: (id: string, input: Partial<ArticleInput>) =>
     fetchApi<Article>(`/api/admin/articles/${id}`, {
       method: "PATCH",
       body: json(input),
-    }),
+    }).then(adminArticle),
   archiveArticle: (id: string, archived: boolean) =>
     fetchApi<Article>(
       `/api/admin/articles/${id}/${archived ? "archive" : "restore"}`,
       { method: "POST" },
-    ),
-  albums: async () =>
-    (await fetchApi<{ items: Album[] }>("/api/admin/albums")).items,
+    ).then(adminArticle),
+  albums: async (signal?: AbortSignal) =>
+    (await fetchApi<{ items: Album[] }>("/api/admin/albums", { signal })).items.map(adminAlbum),
   createAlbum: (title: string, categoryId: string) =>
     fetchApi<Album>("/api/admin/albums", {
       method: "POST",
@@ -110,42 +132,42 @@ export const contentApi = {
         isPrivate: true,
         description: "这是一个刚刚建立的空白相册。",
       }),
-    }),
+    }).then(adminAlbum),
   updateAlbum: (id: string, input: Partial<AlbumInput>) =>
     fetchApi<Album>(`/api/admin/albums/${id}`, {
       method: "PATCH",
       body: json(input),
-    }),
+    }).then(adminAlbum),
   archiveAlbum: (id: string, archived: boolean) =>
     fetchApi<Album>(
       `/api/admin/albums/${id}/${archived ? "archive" : "restore"}`,
       { method: "POST" },
-    ),
+    ).then(adminAlbum),
   createPhoto: (albumId: string, input: PhotoInput) =>
     fetchApi<Photo>(`/api/admin/albums/${albumId}/photos`, {
       method: "POST",
       body: json(input),
-    }),
+    }).then(adminPhoto),
   updatePhoto: (id: string, input: Partial<PhotoInput>) =>
     fetchApi<Photo>(`/api/admin/photos/${id}`, {
       method: "PATCH",
       body: json(input),
-    }),
+    }).then(adminPhoto),
   deletePhoto: (id: string) =>
     fetchApi<void>(`/api/admin/photos/${id}`, { method: "DELETE" }),
   orderPhotos: (albumId: string, ids: string[]) =>
     fetchApi<Album>(`/api/admin/albums/${albumId}/photos/order`, {
       method: "PUT",
       body: json({ ids }),
-    }),
+    }).then(adminAlbum),
   movePhoto: (id: string, albumId: string, position?: number) =>
     fetchApi<Photo>(`/api/admin/photos/${id}/move`, {
       method: "POST",
       body: json({ albumId, position }),
-    }),
-  collections: async () => {
-    const result = await fetchApi<CollectionCatalog>("/api/admin/collections");
-    return { ...result, items: result.items.map(collectionHref) };
+    }).then(adminPhoto),
+  collections: async (signal?: AbortSignal) => {
+    const result = await fetchApi<CollectionCatalog>("/api/admin/collections", { signal });
+    return adminCatalog(result);
   },
   saveCollections: (
     items: CollectionReference[],
@@ -154,15 +176,15 @@ export const contentApi = {
     fetchApi<CollectionCatalog>("/api/admin/collections", {
       method: "PUT",
       body: json({ items, presentation }),
-    }),
-  images: async () =>
-    (await fetchApi<{ items: ImageAsset[] }>("/api/admin/images")).items.map(
-      (item) => ({ ...item, url: `/api/images/${item.id}` }),
+    }).then(adminCatalog),
+  images: async (signal?: AbortSignal) =>
+    (await fetchApi<{ items: ImageAsset[] }>("/api/admin/images", { signal })).items.map(
+      adminAsset,
     ),
   uploadImage: (file: File) => {
     const body = new FormData();
     body.set("file", file);
-    return fetchApi<ImageAsset>("/api/admin/images", { method: "POST", body });
+    return fetchApi<ImageAsset>("/api/admin/images", { method: "POST", body }).then(adminAsset);
   },
   deleteImage: (id: string) =>
     fetchApi<void>(`/api/admin/images/${id}`, { method: "DELETE" }),
