@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -24,8 +24,31 @@ const json = (value: unknown) => new Response(JSON.stringify(value), { status: 2
 const image = { bytes: png, mimeType: 'image/png' as const }
 
 describe('image provider registry', () => {
-  it('is disabled when configuration is absent', () => {
-    expect(loadImageModels({}, vi.fn())).toEqual([])
+  it('loads the default registry if present, and remains off if absent or disabled', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'image-provider-test-'))
+    dirs.push(dir)
+    const path = join(dir, 'data', 'ai-images.json')
+    const fetcher = vi.fn<typeof fetch>()
+    expect(loadImageModels({}, fetcher, path)).toEqual([])
+    mkdirSync(join(dir, 'data'))
+    writeFileSync(path, JSON.stringify(config()))
+    expect(loadImageModels({ API_KEY: 'fake' }, fetcher, path).map(model => model.id)).toEqual(['public-model'])
+    expect(loadImageModels({ AI_IMAGES_ENABLED: 'true', API_KEY: 'fake' }, fetcher, path)).toHaveLength(1)
+    expect(loadImageModels({ AI_IMAGES_ENABLED: 'false', AI_IMAGES_CONFIG: '/not/a/config' }, fetcher, path)).toEqual([])
+    expect(loadImageModels({ AI_IMAGES_ENABLED: 'false' }, fetcher, path)).toEqual([])
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid default config and missing or empty explicit paths', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'image-provider-test-'))
+    dirs.push(dir)
+    const path = join(dir, 'config.json')
+    writeFileSync(path, '{ invalid')
+    const fetcher = vi.fn<typeof fetch>()
+    expect(() => loadImageModels({}, fetcher, path)).toThrow(/^图片服务配置无效：配置文件$/)
+    expect(() => loadImageModels({ AI_IMAGES_CONFIG: join(dir, 'missing') }, fetcher, path)).toThrow(/^图片服务配置无效：配置文件$/)
+    expect(() => loadImageModels({ AI_IMAGES_CONFIG: '' }, fetcher, path)).toThrow(/^图片服务配置无效：配置文件$/)
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
   it('maps OpenAI generations and edits without exposing credentials', async () => {
@@ -83,6 +106,8 @@ describe('image provider registry', () => {
     const fetcher = vi.fn<typeof fetch>()
     const models = loadImageModels({ AI_IMAGES_CONFIG: join(process.cwd(), 'ai-images.example.json'), OPENAI_API_KEY: 'fake', GEMINI_API_KEY: 'fake' }, fetcher)
     expect(models.length).toBeGreaterThan(0)
+    const mycodex = loadImageModels({ AI_IMAGES_CONFIG: join(process.cwd(), 'ai-images.mycodex.example.json'), MYCODEX_API_KEY: 'fake' }, fetcher)
+    expect(mycodex.map(model => model.id)).toEqual(['mycodex-gpt-image-2'])
     expect(fetcher).not.toHaveBeenCalled()
   })
 

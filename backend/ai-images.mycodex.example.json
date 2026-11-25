@@ -1,0 +1,20 @@
+{
+  "providers": [
+    {
+      "id": "my-codex",
+      "protocol": "openai-images",
+      "apiKeyEnv": "MYCODEX_API_KEY",
+      "baseUrl": "https://mycodex.example.com/v1",
+      "models": [
+        {
+          "id": "mycodex-gpt-image-2",
+          "label": "MyCodex · GPT Image 2",
+          "model": "gpt-image-2",
+          "maxReferenceImages": 2,
+          "aspectRatios": ["1:1", "2:3", "3:2"],
+          "options": { "quality": "low" }
+        }
+      ]
+    }
+  ]
+}

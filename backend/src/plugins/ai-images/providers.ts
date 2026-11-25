@@ -44,8 +44,12 @@ function baseUrl(value: unknown): string {
   return url.href.replace(/\/$/, '')
 }
 
-function readConfig(path: string): unknown {
-  const fd = openSync(path, 'r')
+function readConfig(path: string, missingOk: boolean): unknown {
+  let fd: number
+  try { fd = openSync(path, 'r') } catch (error) {
+    if (missingOk && (error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
   try {
     const stat = fstatSync(fd)
     if (!stat.isFile() || stat.size > MAX_CONFIG_BYTES) throw new Error(CONFIG_ERROR)
@@ -175,12 +179,15 @@ const adapters = {
 } satisfies Record<string, Adapter>
 type Protocol = keyof typeof adapters
 
-/** Load and validate the explicit registry once at startup; never expose provider credentials. */
-export function loadImageModels(env: NodeJS.ProcessEnv = process.env, fetcher: typeof fetch = fetch): ImageModel[] {
-  if (!env.AI_IMAGES_CONFIG) return []
+/** Load and validate the registry once at startup; never expose provider credentials. */
+export function loadImageModels(env: NodeJS.ProcessEnv = process.env, fetcher: typeof fetch = fetch, defaultPath = './data/ai-images.json'): ImageModel[] {
+  if (env.AI_IMAGES_ENABLED === 'false') return []
   let context = '配置文件'
   try {
-    const config = object(readConfig(env.AI_IMAGES_CONFIG), ['providers'])
+    const explicitPath = env.AI_IMAGES_CONFIG
+    const rawConfig = readConfig(explicitPath === undefined ? defaultPath : explicitPath, explicitPath === undefined)
+    if (rawConfig === undefined) return []
+    const config = object(rawConfig, ['providers'])
     if (!Array.isArray(config.providers)) throw new Error(CONFIG_ERROR)
     const ids = new Set<string>()
     const providerIds = new Set<string>()

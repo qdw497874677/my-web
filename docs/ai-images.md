@@ -2,14 +2,29 @@
 
 刊主可在编辑部选择生图模板、兼容模型和选填说明。有些模板只用文字，有些要求上传参考图。结果可预览、下载，不会自动保存为图片资产或发布。参考图和说明会发给所选供应商；生成可能计费。
 
-## 启用
+## 默认加载与供应商配置
 
-1. 在 `backend/` 下执行 `mkdir -p data && cp ai-images.example.json data/ai-images.json`。只保留要用的供应商。启用前确认账号已开通示例中的 `model`，且 `baseUrl` 的 API 版本支持其生图接口和配置项；否则改填账号可用的型号、版本和参数。`label` 只是编辑部的显示名，不会发给供应商。
-2. 将 `AI_IMAGES_CONFIG=./data/ai-images.json` 和启用供应商的密钥设置为**后端进程**的环境变量。JSON 中的 `apiKeyEnv` 只填环境变量名，不填密钥。不要在前端或 Git 中保存密钥。
-3. `FRONTEND_ORIGIN` 必须与浏览器打开编辑部的源完全一致（如 `http://localhost:5173`，不要带末尾斜杠）。Node 可显式加载本地配置：在 `backend/` 下执行 `node --env-file=.env --import tsx src/server.ts`。生产部署可由服务管理器注入环境变量。
-4. 重启后端，以刊主身份登录编辑部，打开「AI 生图」。取消设置 `AI_IMAGES_CONFIG` 并重启即可关闭；无需数据库迁移。
+1. 在 `backend/` 下执行 `mkdir -p data && cp ai-images.example.json data/ai-images.json`。只保留要用的供应商，并确认账号支持所填型号和接口。默认读取此文件；如果文件不存在，编辑部仍能正常使用，只是不提供生图。用 `AI_IMAGES_CONFIG` 可指定其他路径。
+2. 在 `backend/.env` 或后端进程环境中设置供应商密钥。JSON 中的 `apiKeyEnv` 只填环境变量名，不填密钥。`npm run dev` 和 `npm start` 会自动加载 `.env`；不要在前端或 Git 中保存密钥。
+3. `FRONTEND_ORIGIN` 必须与浏览器打开编辑部的源完全一致（如 `http://localhost:5173`，不要带末尾斜杠）。重启后端，以刊主身份在编辑部打开「AI 生图」。若要停用，设置 `AI_IMAGES_ENABLED=false` 后重启；无需数据库迁移。
 
-插件只接受 PNG、JPEG、WebP 参考图，单张至多 5 MiB，每次至多两张，由模板指定确切数量。单进程同时只处理一次生成，且每十分钟至多发出六次生成请求；等待供应商响应最多 90 秒，没有自动重试。这些限制在重启时重置，不是供应商账单上限；超时的请求仍可能被供应商计费。
+接入 MyCodex：将 [`ai-images.mycodex.example.json`](../backend/ai-images.mycodex.example.json) 复制为 `backend/data/ai-images.json`，把 `baseUrl` 换成自己的 MyCodex HTTPS API 基地址（包含 `/v1`），并在后端设置 `MYCODEX_API_KEY`。示例使用 `gpt-image-2`。
+
+插件只接受 PNG、JPEG、WebP 参考图，单张至多 5 MiB，每次至多两张，由模板指定确切数量。单进程同时只处理一次生成，且每十分钟至多发出六次生成请求；等待供应商响应最多 180 秒，没有自动重试。这些限制在重启时重置，不是供应商账单上限；超时的请求仍可能被供应商计费。
+
+若部署在反向代理后，请让生图接口的代理超时覆盖上传和生成耗时，避免代理在后端返回结果前断开连接。
+
+## 真实浏览器测试
+
+从 `frontend/` 执行：
+
+```bash
+AI_IMAGES_LIVE_MODEL_ID=mycodex-gpt-image-2 npm run test:e2e -- --project=desktop-chromium ai-images-live.spec.ts
+```
+
+此用例使用独立测试数据库，不拦截生图 API，会向已配置的供应商发送一次可能计费的请求，并检查浏览器能预览、下载返回的图片。`AI_IMAGES_LIVE_MODEL_ID` 填本地配置的模型 `id`；不设置时跳过此用例，普通浏览器测试不会使用真实生图供应商。
+
+默认测试不需要参考图的「刊物封面」；加上 `AI_IMAGES_LIVE_TEMPLATE=photo-illustration` 可改测「照片插画」，上传一张测试生成的合成参考图。
 
 ## 配置与扩展
 

@@ -9,7 +9,7 @@ export interface AiImagesOptions {
 }
 
 const windowMs = 10 * 60 * 1000
-const deadlineMs = 90 * 1000
+const deadlineMs = 180 * 1000
 const uploadDeadlineMs = 60 * 1000
 
 export const aiImagesPlugin: FastifyPluginAsync<AiImagesOptions> = async (app, options) => {

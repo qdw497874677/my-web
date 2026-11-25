@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
-import { buildApp, type App } from '../src/app.js'
+import { buildApp as buildRealApp, type App } from '../src/app.js'
 import { migrate } from '../src/database.js'
 import type { StorageAdapter } from '../src/storage.js'
+
+function buildApp(options: NonNullable<Parameters<typeof buildRealApp>[0]>) {
+  return buildRealApp({ ...options, aiImageModels: [] })
+}
 
 describe('个人刊物 HTTP API', () => {
   let app: App

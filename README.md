@@ -37,9 +37,9 @@ Vite 会输出本地预览地址，默认通常为 `http://localhost:5173`。
 
 开发环境中，Vite 默认将 `/api` 请求代理到 `http://127.0.0.1:3001`，因此前后端需要同时运行。
 
-## 可选：AI 生图
+## AI 生图
 
-编辑部可通过模板生成或改编图片，并预览、下载结果，不会自动保存或发布。默认关闭；启用方式、供应商配置与扩展方法见 [AI 生图插件](docs/ai-images.md)。
+编辑部可通过模板生成或改编图片，并预览、下载结果，不会自动保存或发布。后端默认加载 `backend/data/ai-images.json`，配置模型后无需额外开启；MyCodex 配置和扩展方法见 [AI 生图插件](docs/ai-images.md)。
 
 ## 验证
 
@@ -57,5 +57,9 @@ npm run build
 ```bash
 npm run test:e2e
 ```
+
+测试优先使用 `PATH` 中的本机 Chromium，找不到才使用 Playwright 自带的版本（可用 `npx playwright install chromium` 安装）。可设置 `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/path/to/chromium` 指定路径，或设为 `bundled` 强制使用 Playwright 版本。
+
+若 Linux 的 `/tmp` 配额不足，可用 `TMPDIR=/dev/shm npm run test:e2e` 将浏览器临时文件放到 `/dev/shm`。
 
 组件陈列页位于 `/components`，不显示在公开刊物导航中。

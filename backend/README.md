@@ -15,7 +15,7 @@ npm run db:seed # 可选演示数据
 npm run dev
 ```
 
-`owner:init` 要求 `OWNER_EMAIL` 和 `OWNER_PASSWORD`。应用运行时只检查数据库中是否已经存在唯一所有者，不要求长期保留密码环境变量；非 `test` 环境数据库没有所有者时会拒绝启动并提示执行 `owner:init`。`test@test.test / test` 不再是运行时默认值。生产环境 Cookie 默认启用 `Secure`，本地 HTTP 开发可显式设置 `COOKIE_SECURE=false`。
+`owner:init` 要求 `OWNER_EMAIL` 和 `OWNER_PASSWORD`。应用运行时只检查数据库中是否已经存在唯一所有者，不要求长期保留密码环境变量；非 `test` 环境数据库没有所有者时会拒绝启动并提示执行 `owner:init`。`test@test.test / test` 不再是运行时默认值。`npm run dev` 和 `npm start` 会读取本目录下的 `.env`（若存在），进程环境变量优先。生产环境 Cookie 默认启用 `Secure`，本地 HTTP 开发可显式设置 `COOKIE_SECURE=false`。
 
 如前端 E2E 需要演示内容，应在测试启动脚本中先执行 `npm run db:init && npm run owner:init && npm run db:seed`。也可由测试代码调用 `buildApp({ seed: true, initializeOwner: ... })`；普通服务启动不会读取 `SEED_ON_START` 自动写数据，避免误污染生产库。
 
@@ -28,7 +28,7 @@ npm run dev
 - `/api/admin/albums`：相册创建、读取、更新、归档与恢复
 - `/api/admin/albums/:id/photos`、`/api/admin/photos/:id`：照片创建、编辑、排序、移动、移除
 - `/api/admin/images`：multipart 上传、列表和引用保护删除
-- `GET /api/admin/ai-images/catalog`、`POST /api/admin/ai-images/generate`：可选的 [AI 生图插件](../docs/ai-images.md)
+- `GET /api/admin/ai-images/catalog`、`POST /api/admin/ai-images/generate`：[AI 生图插件](../docs/ai-images.md)，默认加载本地模型配置
 - `GET/PUT /api/admin/featured`：精选目录、排序与可见性
 - `/api/public/articles`、`/api/public/albums`、`/api/public/featured`
 - `POST /api/public/subscriptions`
