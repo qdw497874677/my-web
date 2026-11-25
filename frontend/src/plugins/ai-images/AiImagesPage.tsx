@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { AdminShell, MixedHeadline } from "../../components/editorial";
+import { MixedHeadline } from "../../components/editorial";
 import { Button } from "../../components/ui";
-import { generateImage, useImageGenerationCatalog } from "./api";
+import { generateImage } from "./api";
+import { useAiImagesCatalog } from "./catalog";
 import "./ai-images.css";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 function ImageWorkspace() {
-  const { catalog, loading, error } = useImageGenerationCatalog(true);
+  const { catalog, loading, error } = useAiImagesCatalog();
   const [templateId, setTemplateId] = useState("");
   const [modelId, setModelId] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -113,5 +114,5 @@ function ImageWorkspace() {
 }
 
 export function AiImagesPage() {
-  return <AdminShell title="AI 生图" viewTo="/"><ImageWorkspace /></AdminShell>;
+  return <ImageWorkspace />;
 }

@@ -39,7 +39,7 @@ Vite 会输出本地预览地址，默认通常为 `http://localhost:5173`。
 
 ## AI 生图
 
-编辑部可通过模板生成或改编图片，并预览、下载结果，不会自动保存或发布。后端默认加载 `backend/data/ai-images.json`，配置模型后无需额外开启；MyCodex 配置和扩展方法见 [AI 生图插件](docs/ai-images.md)。
+个人工作台提供刊物编辑和 AI 生图。生图可通过模板生成或改编图片，并预览、下载结果，不会自动保存或发布。后端默认加载 `backend/data/ai-images.json`，配置模型后无需额外开启；MyCodex 配置和扩展方法见 [AI 生图插件](docs/ai-images.md)。工作台的接入边界见 [ADR 0003](docs/adr/0003-static-owner-workbench.md)。
 
 ## 验证
 

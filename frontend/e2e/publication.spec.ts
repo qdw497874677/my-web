@@ -1,6 +1,6 @@
-import { expect, request as playwrightRequest, test, type BrowserContext, type SetCookieParam } from '@playwright/test'
+import { expect, request as playwrightRequest, test, type BrowserContext } from '@playwright/test'
 
-let authCookies:SetCookieParam[]=[]
+let authCookies:Parameters<BrowserContext['addCookies']>[0]=[]
 test.beforeAll(async()=>{
   const api=await playwrightRequest.newContext({baseURL:'http://127.0.0.1:4187'})
   const response=await api.post('/api/auth/login',{data:{email:'test@test.test',password:'test'}})

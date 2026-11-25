@@ -3,9 +3,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useContent } from "../domain/useContent";
-import { useImageGenerationCatalog } from "../plugins/ai-images/api";
+import { Link, NavLink } from "react-router-dom";
 import type {
   Album,
   Article,
@@ -175,105 +173,5 @@ export function AlbumCard({
         </p>
       </button>
     </article>
-  );
-}
-
-export function AdminShell({
-  children,
-  title,
-  viewTo,
-}: {
-  children: ReactNode;
-  title: string;
-  viewTo: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { owner, loadAdmin, logout, adminLoading, adminError } = useContent();
-  const { catalog: imageCatalog } = useImageGenerationCatalog(Boolean(owner));
-  useEffect(() => {
-    let active = true;
-    void loadAdmin().then((result) => {
-      if (active && result === "unauthenticated")
-        navigate("/admin/login", { replace: true });
-    });
-    return () => {
-      active = false;
-    };
-  }, [loadAdmin, navigate]);
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) =>
-      event.key === "Escape" && setOpen(false);
-    addEventListener("keydown", keydown);
-    return () => removeEventListener("keydown", keydown);
-  }, []);
-  const signOut = async () => {
-    await logout();
-    navigate("/admin/login");
-  };
-  if (adminLoading && !owner)
-    return (
-      <main className="container intro">
-        <p>正在验证编辑部会话...</p>
-      </main>
-    );
-  if (adminError && !owner)
-    return (
-      <main className="container intro">
-        <p className="error">{adminError}</p>
-      </main>
-    );
-  if (!owner) return null;
-  return (
-    <div className="adminBody">
-      <div className="adminShell">
-        <aside className={`adminSidebar ${open ? "open" : ""}`}>
-          <Link className="brand" to="/admin/dashboard">
-            <span className="brandMark">林</span>
-            <span>编辑部</span>
-          </Link>
-          <nav className="adminNav">
-            {[
-              ["总览", "/admin/dashboard"],
-              ["文章", "/admin/articles"],
-              ["相册", "/admin/albums"],
-              ["收藏", "/admin/collections"],
-              ...(imageCatalog?.enabled ? [["AI 生图", "/admin/ai-images"]] : []),
-            ].map(([label, to]) => (
-              <Link
-                key={to}
-                className={location.pathname === to ? "active" : ""}
-                to={to}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-          <div className="sidebarFoot">
-            <p>{owner.email}</p>
-            <button className="ghost" onClick={() => void signOut()}>
-              退出登录
-            </button>
-          </div>
-        </aside>
-        <main>
-          <header className="adminTopbar">
-            <button
-              className="menuButton"
-              onClick={() => setOpen(!open)}
-              aria-expanded={open}
-            >
-              ☰
-            </button>
-            <p>林间刊物 / {title}</p>
-            <Link className="linkButton secondary" to={viewTo}>
-              查看公开站
-            </Link>
-          </header>
-          <div className="adminContent">{children}</div>
-        </main>
-      </div>
-    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { captureOwnerSessionInvalidation } from "../../workbench/owner-session-events";
 
 export interface ImageTemplate {
   id: string;
@@ -44,6 +45,7 @@ function parseCatalog(value: unknown): ImageGenerationCatalog {
 }
 
 async function request(path: string, init: RequestInit): Promise<Response> {
+  const invalidateSession = captureOwnerSessionInvalidation();
   let response: Response;
   try {
     response = await fetch(path, { ...init, credentials: "include" });
@@ -52,6 +54,7 @@ async function request(path: string, init: RequestInit): Promise<Response> {
     throw new Error("无法连接服务器，请检查网络后重试");
   }
   if (!response.ok) {
+    if (response.status === 401 && !init.signal?.aborted) invalidateSession();
     const payload: unknown = await response.json().catch(() => null);
     const message = isRecord(payload) && isNonemptyText(payload.error)
       ? payload.error

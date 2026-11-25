@@ -89,14 +89,7 @@ export interface CollectionView {
   photoId?: string;
 }
 
-export interface Owner {
-  id: string;
-  email: string;
-}
-export interface Session {
-  authenticated: boolean;
-  owner?: Owner;
-}
+export type { Owner, Session } from "../workbench/session-api";
 export type CollectionCardTheme = "stamp" | "editorial" | "holographic" | "cinema" | "boarding";
 export interface CollectionPresentation {
   defaultTheme: CollectionCardTheme;

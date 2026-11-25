@@ -1,3 +1,5 @@
+import { fetchApi } from "../shared/http";
+export { ApiError, fetchApi } from "../shared/http";
 import type {
   Album,
   AlbumInput,
@@ -14,39 +16,6 @@ import type {
   Session,
 } from "./types";
 
-export class ApiError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-export async function fetchApi<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (init.body && !(init.body instanceof FormData))
-    headers.set("Content-Type", "application/json");
-  let response: Response;
-  try {
-    response = await fetch(path, { ...init, headers, credentials: "include" });
-  } catch {
-    throw new ApiError(0, "无法连接服务器，请检查网络后重试");
-  }
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new ApiError(
-      response.status,
-      payload?.error ?? `请求失败（${response.status}）`,
-    );
-  }
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
-}
 const json = (value: unknown) => JSON.stringify(value);
 const collectionHref = (item: CollectionView) =>
   item.sourceType === "photo" && item.photoId

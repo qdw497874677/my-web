@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CollectionCard } from "../components/CollectionCard";
-import { AdminShell, MixedHeadline } from "../components/editorial";
+import { MixedHeadline } from "../components/editorial";
 import { Button, SelectField } from "../components/ui";
 import {
   buildCollectionCatalog,
@@ -273,7 +273,7 @@ export function AdminCollectionsPage() {
     }
   };
   return (
-    <AdminShell title="收藏编排" viewTo="/collections">
+    <>
       <section className="adminHeading">
         <div>
           <p className="eyebrow">COLLECTION DESK</p>
@@ -313,6 +313,6 @@ export function AdminCollectionsPage() {
           onSave={() => void save()}
         />
       </div>
-    </AdminShell>
+    </>
   );
 }

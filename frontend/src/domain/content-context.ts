@@ -9,7 +9,6 @@ import type {
   CollectionReference,
   CollectionView,
   ImageAsset,
-  Owner,
   PhotoInput,
 } from "./types";
 export interface ContentValue {
@@ -28,10 +27,7 @@ export interface ContentValue {
   images: ImageAsset[];
   adminLoading: boolean;
   adminError: string;
-  owner?: Owner;
-  loadAdmin: () => Promise<"authenticated" | "unauthenticated" | "error">;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
+  reloadAdmin: () => Promise<void>;
   subscribe: (email: string) => Promise<void>;
   createCategory: (name: string) => Promise<void>;
   updateCategory: (id: string, name: string) => Promise<void>;
