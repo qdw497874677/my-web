@@ -16,9 +16,7 @@ export interface ContentValue {
   publicAlbums: Album[];
   publicCollections: CollectionView[];
   publicCollectionPresentation: CollectionPresentation;
-  publicCollectionsLoaded: boolean;
-  publicLoading: boolean;
-  publicError: string;
+  publicStatus: Record<"articles" | "albums" | "collections", { loading: boolean; error: string }>;
   adminArticles: Article[];
   adminAlbums: Album[];
   categories: Category[];

@@ -45,21 +45,21 @@ const adminAsset = (item: ImageAsset): ImageAsset => ({
 });
 
 export const contentApi = {
-  publicArticles: async () =>
-    (await fetchApi<{ items: Article[] }>("/api/public/articles")).items,
+  publicArticles: async (signal?: AbortSignal) =>
+    (await fetchApi<{ items: Article[] }>("/api/public/articles", { signal })).items,
   publicArticle: (slug: string, signal?: AbortSignal) =>
     fetchApi<Article>(`/api/public/articles/${encodeURIComponent(slug)}`, {
       signal,
     }),
-  publicAlbums: async () =>
-    (await fetchApi<{ items: Album[] }>("/api/public/albums")).items,
+  publicAlbums: async (signal?: AbortSignal) =>
+    (await fetchApi<{ items: Album[] }>("/api/public/albums", { signal })).items,
   publicAlbum: (id: string, signal?: AbortSignal) =>
     fetchApi<Album>(`/api/public/albums/${encodeURIComponent(id)}`, { signal }),
-  publicCollections: async () => {
+  publicCollections: async (signal?: AbortSignal) => {
     const result = await fetchApi<{
       items: CollectionView[];
       presentation: CollectionPresentation;
-    }>("/api/public/collections");
+    }>("/api/public/collections", { signal });
     return {
       ...result,
       items: result.items.map(collectionHref),

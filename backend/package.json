@@ -14,6 +14,7 @@
     "test": "vitest run",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "db:init": "tsx src/commands/init.ts",
+    "data": "tsx src/commands/data.ts",
     "owner:init": "tsx --env-file-if-exists=.env src/commands/owner-init.ts",
     "db:seed": "tsx src/commands/seed.ts"
   },

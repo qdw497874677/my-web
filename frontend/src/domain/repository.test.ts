@@ -30,6 +30,15 @@ describe('API 客户端', () => {
     for(const [, init] of fetchMock.mock.calls) expect(init.signal).toBe(controller.signal)
   })
 
+  it('将三个公开列表请求的信号传给 fetch', async () => {
+    const fetchMock=vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({items:[],presentation:{defaultTheme:'stamp',enabledThemes:['stamp']}}),{status:200,headers:{'Content-Type':'application/json'}})))
+    vi.stubGlobal('fetch',fetchMock)
+    const controller=new AbortController()
+    await Promise.all([contentApi.publicArticles(controller.signal),contentApi.publicAlbums(controller.signal),contentApi.publicCollections(controller.signal)])
+    expect(fetchMock.mock.calls.map(([url])=>url)).toEqual(['/api/public/articles','/api/public/albums','/api/public/collections'])
+    for(const [, init] of fetchMock.mock.calls) expect(init.signal).toBe(controller.signal)
+  })
+
   it('文章和照片写入使用图片资产 ID', async () => {
     const fetchMock=vi.fn().mockImplementation(()=>Promise.resolve(new Response(JSON.stringify({id:'saved'}),{status:200,headers:{'Content-Type':'application/json'}})))
     vi.stubGlobal('fetch',fetchMock)

@@ -1,24 +1,30 @@
+import { lazy, Suspense, type ReactNode } from "react";
 import { BrowserRouter, matchPath, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ContentProvider } from "./domain/ContentContext";
 import { useContent } from "./domain/useContent";
-import { AdminAlbumsPage, AdminArticlesPage, DashboardPage } from "./pages/AdminPages";
-import { AdminCollectionsPage } from "./pages/AdminCollectionsPage";
-import { CollectionsPage } from "./pages/CollectionsPage";
-import { ComponentsPage } from "./pages/ComponentsPage";
-import { AiImagesPage } from "./plugins/ai-images/AiImagesPage";
 import { AiImagesCatalogProvider, useAiImagesCatalog } from "./plugins/ai-images/catalog";
-import {
-  AlbumDetailPage,
-  AlbumsPage,
-  ArticleDetailPage,
-  ArticlesPage,
-  HomePage,
-} from "./pages/PublicPages";
-import { LoginPage } from "./workbench/LoginPage";
+import { HomePage } from "./pages/HomePage";
 import { OwnerSessionProvider, RequireOwner } from "./workbench/OwnerSessionProvider";
 import { WorkbenchShell } from "./workbench/WorkbenchShell";
 import { useOwnerSession } from "./workbench/owner-session";
 import "./editorial-notice.css";
+
+const DashboardPage = lazy(() => import("./pages/DashboardPage").then(({ DashboardPage }) => ({ default: DashboardPage })));
+const AdminArticlesPage = lazy(() => import("./pages/AdminArticlesPage").then(({ AdminArticlesPage }) => ({ default: AdminArticlesPage })));
+const AdminAlbumsPage = lazy(() => import("./pages/AdminAlbumsPage").then(({ AdminAlbumsPage }) => ({ default: AdminAlbumsPage })));
+const AdminCollectionsPage = lazy(() => import("./pages/AdminCollectionsPage").then(({ AdminCollectionsPage }) => ({ default: AdminCollectionsPage })));
+const ArticlesPage = lazy(() => import("./pages/PublicLists").then(({ ArticlesPage }) => ({ default: ArticlesPage })));
+const AlbumsPage = lazy(() => import("./pages/PublicLists").then(({ AlbumsPage }) => ({ default: AlbumsPage })));
+const ArticleDetailPage = lazy(() => import("./pages/ArticleDetailPage").then(({ ArticleDetailPage }) => ({ default: ArticleDetailPage })));
+const AlbumDetailPage = lazy(() => import("./pages/AlbumDetailPage").then(({ AlbumDetailPage }) => ({ default: AlbumDetailPage })));
+const CollectionsPage = lazy(() => import("./pages/CollectionsPage").then(({ CollectionsPage }) => ({ default: CollectionsPage })));
+const ComponentsPage = lazy(() => import("./pages/ComponentsPage").then(({ ComponentsPage }) => ({ default: ComponentsPage })));
+const AiImagesPage = lazy(() => import("./plugins/ai-images/AiImagesPage").then(({ AiImagesPage }) => ({ default: AiImagesPage })));
+const LoginPage = lazy(() => import("./workbench/LoginPage").then(({ LoginPage }) => ({ default: LoginPage })));
+
+function RouteLoading({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<p className="results" role="status">正在加载...</p>}>{children}</Suspense>;
+}
 
 const editorialPages = [
   { id: "dashboard", to: "/admin/dashboard", label: "总览", title: "运营总览", viewTo: "/", Page: DashboardPage },
@@ -44,7 +50,7 @@ function WorkbenchLayout() {
       ownerEmail={owner.email}
       onLogout={() => void logout()}
     >
-      <Outlet />
+      <RouteLoading><Outlet /></RouteLoading>
     </WorkbenchShell>
   );
 }
@@ -76,17 +82,17 @@ function AppRoutes() {
     <Routes>
       <Route element={<ContentProvider><Outlet /></ContentProvider>}>
         <Route index element={<HomePage />} />
-        <Route path="articles" element={<ArticlesPage />} />
-        <Route path="articles/:slug" element={<ArticleDetailPage />} />
-        <Route path="albums" element={<AlbumsPage />} />
-        <Route path="albums/:id" element={<AlbumDetailPage />} />
-        <Route path="collections" element={<CollectionsPage />} />
+        <Route path="articles" element={<RouteLoading><ArticlesPage /></RouteLoading>} />
+        <Route path="articles/:slug" element={<RouteLoading><ArticleDetailPage /></RouteLoading>} />
+        <Route path="albums" element={<RouteLoading><AlbumsPage /></RouteLoading>} />
+        <Route path="albums/:id" element={<RouteLoading><AlbumDetailPage /></RouteLoading>} />
+        <Route path="collections" element={<RouteLoading><CollectionsPage /></RouteLoading>} />
         <Route path="favorites" element={<Navigate to="/collections" replace />} />
-        <Route path="components" element={<ComponentsPage />} />
+        <Route path="components" element={<RouteLoading><ComponentsPage /></RouteLoading>} />
       </Route>
       <Route path="/admin">
         <Route index element={<Navigate to="/" replace />} />
-        <Route path="/admin/login" element={<LoginPage />} />
+        <Route path="/admin/login" element={<RouteLoading><LoginPage /></RouteLoading>} />
         <Route element={<RequireOwner />}>
           <Route element={<AiImagesCatalogProvider><WorkbenchLayout /></AiImagesCatalogProvider>}>
             <Route element={<ContentProvider scope="editorial"><EditorialOutlet /></ContentProvider>}>

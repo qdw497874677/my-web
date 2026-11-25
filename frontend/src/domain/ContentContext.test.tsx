@@ -38,13 +38,74 @@ afterEach(cleanup);
 describe("ContentProvider scopes", () => {
   it("loads only public lists in public scope", async () => {
     render(<ContentProvider><Consumer /></ContentProvider>);
-    await waitFor(() => expect(current.publicLoading).toBe(false));
-    expect(current.publicCollectionsLoaded).toBe(true);
+    await waitFor(() => expect(current.publicStatus.collections.loading).toBe(false));
+    expect(current.publicStatus).toEqual({
+      articles: { loading: false, error: "" },
+      albums: { loading: false, error: "" },
+      collections: { loading: false, error: "" },
+    });
     expect(contentApi.publicArticles).toHaveBeenCalledTimes(1);
     expect(contentApi.publicAlbums).toHaveBeenCalledTimes(1);
     expect(contentApi.publicCollections).toHaveBeenCalledTimes(1);
     expect(contentApi.categories).not.toHaveBeenCalled();
     expect(contentApi.articles).not.toHaveBeenCalled();
+    expect(contentApi.albums).not.toHaveBeenCalled();
+    expect(contentApi.collections).not.toHaveBeenCalled();
+    expect(contentApi.images).not.toHaveBeenCalled();
+  });
+
+  it("settles successful lists independently when one rejects and another hangs", async () => {
+    const albums = [{ id: "album" }] as never;
+    vi.mocked(contentApi.publicArticles).mockRejectedValueOnce(new Error("articles offline"));
+    vi.mocked(contentApi.publicAlbums).mockResolvedValueOnce(albums);
+    vi.mocked(contentApi.publicCollections).mockReturnValueOnce(new Promise(() => {}));
+    const view = render(<ContentProvider><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.publicStatus.articles.error).toBe("articles offline"));
+    expect(current.publicStatus).toEqual({
+      articles: { loading: false, error: "articles offline" },
+      albums: { loading: false, error: "" },
+      collections: { loading: true, error: "" },
+    });
+    expect(current.publicAlbums).toEqual(albums);
+    const signal = vi.mocked(contentApi.publicArticles).mock.lastCall?.[0];
+    expect(signal).toBeDefined();
+    expect(vi.mocked(contentApi.publicAlbums).mock.lastCall?.[0]).toBe(signal);
+    expect(vi.mocked(contentApi.publicCollections).mock.lastCall?.[0]).toBe(signal);
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("ignores late success and failure after scope changes even when requests ignore abort", async () => {
+    let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.publicArticles>>) => void;
+    let rejectOld!: (error: Error) => void;
+    vi.mocked(contentApi.publicArticles).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    vi.mocked(contentApi.publicAlbums).mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject; }));
+    const view = render(<ContentProvider><Consumer /></ContentProvider>);
+    const oldSignal = vi.mocked(contentApi.publicArticles).mock.lastCall?.[0];
+    view.rerender(<ContentProvider scope="editorial"><Consumer /></ContentProvider>);
+    expect(oldSignal?.aborted).toBe(true);
+    await waitFor(() => expect(current.adminLoading).toBe(false));
+    view.rerender(<ContentProvider><Consumer /></ContentProvider>);
+    await waitFor(() => expect(current.publicStatus.albums.loading).toBe(false));
+    await act(async () => {
+      resolveOld([{ id: "stale" }] as never);
+      rejectOld(new Error("stale failure"));
+    });
+    expect(current.publicArticles).toEqual([]);
+    expect(current.publicStatus.articles).toEqual({ loading: false, error: "" });
+    expect(current.publicStatus.albums).toEqual({ loading: false, error: "" });
+  });
+
+  it("ignores obsolete public StrictMode results", async () => {
+    let resolveOld!: (value: Awaited<ReturnType<typeof contentApi.publicCollections>>) => void;
+    vi.mocked(contentApi.publicCollections).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    render(<StrictMode><ContentProvider><Consumer /></ContentProvider></StrictMode>);
+    const oldSignal = vi.mocked(contentApi.publicCollections).mock.calls[0][0];
+    expect(oldSignal?.aborted).toBe(true);
+    await waitFor(() => expect(current.publicStatus.collections.loading).toBe(false));
+    await act(async () => resolveOld({ items: [{ id: "stale" }] as never, presentation }));
+    expect(current.publicCollections).toEqual([]);
+    expect(current.publicStatus.collections).toEqual({ loading: false, error: "" });
   });
 
   it("loads editorial lists, captures failure and retries without public requests", async () => {

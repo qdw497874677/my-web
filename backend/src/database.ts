@@ -4,18 +4,36 @@ import { DatabaseSync } from 'node:sqlite'
 import { albums, articles, categories, collections } from './seed-data.js'
 import { hashPassword } from './security.js'
 
+export const LATEST_DATABASE_VERSION = 5
+
 export function openDatabase(path: string): DatabaseSync {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
   const db = new DatabaseSync(path)
-  db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;')
-  migrate(db)
-  return db
+  try {
+    db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;')
+    migrate(db)
+    return db
+  } catch (error) {
+    try { db.close() } catch { /* Preserve the setup error. */ }
+    throw error
+  }
+}
+
+function migrateVersion(db: DatabaseSync, sql: string): void {
+  db.exec('BEGIN')
+  try {
+    db.exec(sql)
+    db.exec('COMMIT')
+  } catch (error) {
+    try { db.exec('ROLLBACK') } catch { /* Preserve the migration error. */ }
+    throw error
+  }
 }
 
 export function migrate(db: DatabaseSync): void {
   const version = Number((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version)
-  if (version > 5) throw new Error(`不支持的数据库版本: ${version}`)
-  if (version === 0) db.exec(`
+  if (version > LATEST_DATABASE_VERSION) throw new Error(`不支持的数据库版本: ${version}`)
+  if (version === 0) migrateVersion(db, `
     CREATE TABLE owners(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
     CREATE TABLE sessions(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id) ON DELETE CASCADE, expires_at TEXT NOT NULL);
     CREATE TABLE categories(id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, position INTEGER NOT NULL UNIQUE);
@@ -31,7 +49,7 @@ export function migrate(db: DatabaseSync): void {
     CREATE TABLE subscriptions(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
     PRAGMA user_version = 1;
   `)
-  if (version < 2) db.exec(`
+  if (version < 2) migrateVersion(db, `
     INSERT OR IGNORE INTO assets VALUES ('asset-builtin-cta','cta.png','image/png',0,'external',NULL,'/assets/cta.png',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
     INSERT OR IGNORE INTO assets VALUES ('asset-builtin-hero','hero.png','image/png',0,'external',NULL,'/assets/hero.png',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
 
@@ -70,7 +88,7 @@ export function migrate(db: DatabaseSync): void {
     BEGIN SELECT RAISE(ABORT,'delete album cover after selecting replacement'); END;
     PRAGMA user_version = 2;
   `)
-  if (version < 3) db.exec(`
+  if (version < 3) migrateVersion(db, `
     DROP TRIGGER IF EXISTS featured_photo_album_insert;
     DROP TRIGGER IF EXISTS featured_photo_album_update;
     DROP INDEX IF EXISTS featured_article_source;
@@ -107,10 +125,7 @@ export function migrate(db: DatabaseSync): void {
     INSERT INTO collection_presentation VALUES (1,'stamp','["stamp","editorial"]');
     PRAGMA user_version = 3;
   `)
-  if (version < 4) {
-    try {
-      db.exec(`
-        BEGIN;
+  if (version < 4) migrateVersion(db, `
         ALTER TABLE collection_presentation RENAME TO collection_presentation_v3;
         CREATE TABLE collection_presentation(
           singleton INTEGER PRIMARY KEY CHECK(singleton=1),
@@ -130,17 +145,8 @@ export function migrate(db: DatabaseSync): void {
           OR NOT EXISTS(SELECT 1 FROM json_each(NEW.enabled_themes) WHERE value=NEW.default_theme)
         BEGIN SELECT RAISE(ABORT,'invalid collection presentation'); END;
         PRAGMA user_version = 4;
-        COMMIT;
-      `)
-    } catch (error) {
-      try { db.exec('ROLLBACK') } catch { /* Transaction may not have started. */ }
-      throw error
-    }
-  }
-  if (version < 5) {
-    try {
-      db.exec(`
-        BEGIN;
+  `)
+  if (version < 5) migrateVersion(db, `
         DROP TRIGGER IF EXISTS collection_presentation_insert;
         DROP TRIGGER IF EXISTS collection_presentation_update;
         ALTER TABLE collection_presentation RENAME TO collection_presentation_v4;
@@ -162,13 +168,7 @@ export function migrate(db: DatabaseSync): void {
           OR NOT EXISTS(SELECT 1 FROM json_each(NEW.enabled_themes) WHERE value=NEW.default_theme)
         BEGIN SELECT RAISE(ABORT,'invalid collection presentation'); END;
         PRAGMA user_version = 5;
-        COMMIT;
-      `)
-    } catch (error) {
-      try { db.exec('ROLLBACK') } catch { /* Transaction may not have started. */ }
-      throw error
-    }
-  }
+  `)
 }
 
 export function hasOwner(db: DatabaseSync): boolean {

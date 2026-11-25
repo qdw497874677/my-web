@@ -21,6 +21,11 @@ const defaultPresentation: CollectionPresentation = {
   enabledThemes: ["stamp", "editorial", "holographic", "cinema", "boarding"],
 };
 const adminRefreshTimeoutMs = 15_000;
+const initialPublicStatus = (): ContentValue["publicStatus"] => ({
+  articles: { loading: true, error: "" },
+  albums: { loading: true, error: "" },
+  collections: { loading: true, error: "" },
+});
 
 export function ContentProvider({
   children,
@@ -34,9 +39,7 @@ export function ContentProvider({
     [publicCollections, setPublicCollections] = useState<CollectionView[]>([]),
     [publicCollectionPresentation, setPublicCollectionPresentation] =
       useState(defaultPresentation),
-    [publicCollectionsLoaded, setPublicCollectionsLoaded] = useState(false),
-    [publicLoading, setPublicLoading] = useState(true),
-    [publicError, setPublicError] = useState("");
+    [publicStatus, setPublicStatus] = useState(initialPublicStatus);
   const [adminArticles, setAdminArticles] = useState<Article[]>([]),
     [adminAlbums, setAdminAlbums] = useState<Album[]>([]),
     [categories, setCategories] = useState<Category[]>([]),
@@ -53,31 +56,33 @@ export function ContentProvider({
     adminController = useRef<AbortController | null>(null),
     adminLoadingRef = useRef(scope === "editorial"),
     active = useRef(false);
-  const loadPublic = useCallback(async () => {
+  const loadPublic = useCallback((signal: AbortSignal) => {
     const expected = generation.current;
-    setPublicLoading(true);
-    setPublicError("");
-    try {
-      const [articles, albums, collections] = await Promise.all([
-        contentApi.publicArticles(),
-        contentApi.publicAlbums(),
-        contentApi.publicCollections(),
-      ]);
-      if (!active.current || expected !== generation.current) return;
-      setPublicArticles(articles);
-      setPublicAlbums(albums);
+    setPublicStatus(initialPublicStatus());
+    const load = async <T,>(
+      key: keyof ContentValue["publicStatus"],
+      request: () => Promise<T>,
+      apply: (value: T) => void,
+    ) => {
+      try {
+        const value = await request();
+        if (!active.current || expected !== generation.current || signal.aborted) return;
+        apply(value);
+        setPublicStatus((previous) => ({ ...previous, [key]: { loading: false, error: "" } }));
+      } catch (error) {
+        if (!active.current || expected !== generation.current || signal.aborted) return;
+        setPublicStatus((previous) => ({
+          ...previous,
+          [key]: { loading: false, error: error instanceof Error ? error.message : "公开内容加载失败" },
+        }));
+      }
+    };
+    void load("articles", () => contentApi.publicArticles(signal), setPublicArticles);
+    void load("albums", () => contentApi.publicAlbums(signal), setPublicAlbums);
+    void load("collections", () => contentApi.publicCollections(signal), (collections) => {
       setPublicCollections(collections.items);
       setPublicCollectionPresentation(collections.presentation);
-      setPublicCollectionsLoaded(true);
-    } catch (error) {
-      if (!active.current || expected !== generation.current) return;
-      setPublicError(
-        error instanceof Error ? error.message : "公开内容加载失败",
-      );
-    } finally {
-      if (active.current && expected === generation.current)
-        setPublicLoading(false);
-    }
+    });
   }, []);
   const loadAdminData = useCallback(async () => {
     if (!active.current) return;
@@ -150,11 +155,13 @@ export function ContentProvider({
   useEffect(() => {
     active.current = true;
     generation.current++;
-    if (scope === "public") void loadPublic();
+    const publicController = new AbortController();
+    if (scope === "public") loadPublic(publicController.signal);
     else void reloadAdmin();
     return () => {
       active.current = false;
       generation.current++;
+      publicController.abort();
       adminController.current?.abort();
     };
   }, [loadPublic, reloadAdmin, scope]);
@@ -174,9 +181,7 @@ export function ContentProvider({
     publicAlbums,
     publicCollections,
     publicCollectionPresentation,
-    publicCollectionsLoaded,
-    publicLoading,
-    publicError,
+    publicStatus,
     adminArticles,
     adminAlbums,
     categories,

@@ -25,15 +25,13 @@ export function CollectionsPage() {
   const {
     publicCollections: all,
     publicCollectionPresentation: presentation,
-    publicCollectionsLoaded,
-    publicLoading,
-    publicError,
+    publicStatus: { collections: status },
   } = useContent();
   const [filter, setFilter] = useState("全部");
   const [preview, setPreview] = useState<CollectionPreviewState>();
   const [previewActive, setPreviewActive] = useState(false);
   const { theme, options: themeOptions, switchTheme } =
-    useCollectionTheme(presentation, publicCollectionsLoaded);
+    useCollectionTheme(presentation, !status.loading && !status.error);
   const items = useMemo(
     () => all.filter((item) => filter === "全部" || item.type === filter),
     [all, filter],
@@ -58,7 +56,7 @@ export function CollectionsPage() {
             value={filter}
             onChange={setFilter}
           />
-          {all.length > 0 && presentation.enabledThemes.length > 1 && (
+          {!status.loading && !status.error && all.length > 0 && presentation.enabledThemes.length > 1 && (
             <div className="collectionThemeSwitch" aria-label="卡片样式">
               <span>卡片样式</span>
               {themeOptions.map((option) => (
@@ -73,21 +71,21 @@ export function CollectionsPage() {
               ))}
             </div>
           )}
-          <span className="results">{items.length} 项收藏</span>
+          {!status.loading && !status.error && <span className="results">{items.length} 项收藏</span>}
         </div>
-        {publicLoading ? (
+        {status.loading ? (
           <p className="results" role="status">
             正在加载刊物内容...
           </p>
-        ) : (
+        ) : !status.error ? (
           <section className="collectionGrid">
             {items.map((item, index) => (
               <CollectionCard key={item.id} item={item} theme={theme} index={index + 1} onPreview={(source) => { setPreview({ item, source }); setPreviewActive(true); }} />
             ))}
           </section>
-        )}
-        <p className="error">{publicError}</p>
-        {!publicLoading && items.length === 0 && (
+        ) : null}
+        <p className="error">{status.error}</p>
+        {!status.loading && !status.error && items.length === 0 && (
           <MixedHeadline as="h2">
             本期收藏正在<em>编排</em>
           </MixedHeadline>

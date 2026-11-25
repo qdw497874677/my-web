@@ -66,6 +66,46 @@ test('文章筛选和相册灯箱可操作', async ({ page }) => {
   await expect(page.getByRole('dialog')).not.toBeVisible()
 })
 
+test('文章列表不等待相册，也不受精选读取失败影响', async ({ page }) => {
+  let releaseAlbums!: () => void
+  const albumsPending = new Promise<void>(resolve => { releaseAlbums = resolve })
+  await page.route('**/api/public/albums', async route => {
+    await albumsPending
+    await route.continue()
+  })
+  await page.route('**/api/public/collections', route =>
+    route.fulfill({ status: 503, json: { error: '精选暂不可用' } }))
+  try {
+    await page.goto('/articles', { waitUntil: 'domcontentloaded' })
+    await expect(page.getByRole('heading', { name: '给个人工具留一盏不会催促你的灯' })).toBeVisible()
+    await expect(page.getByText('精选暂不可用')).not.toBeVisible()
+  } finally {
+    releaseAlbums()
+  }
+})
+
+test('相册详情切换 ID 清除旧错误，切换照片不重读相册', async ({ page }) => {
+  let albumReads = 0
+  await page.route('**/api/public/albums/album-id-missing', route =>
+    route.fulfill({ status: 404, json: { error: '旧相册不存在' } }))
+  await page.route('**/api/public/albums/album-city-south', route => {
+    albumReads++
+    return route.continue()
+  })
+  await page.goto('/albums/album-id-missing', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByText('旧相册不存在')).toBeVisible()
+  // Simulate a same-document router navigation, not a fresh mount via page.goto.
+  await page.evaluate(() => {
+    history.pushState(history.state, '', '/albums/album-city-south')
+    dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+  })
+  await expect(page.getByRole('heading', { name: '城南，雨水退去后' })).toBeVisible()
+  await expect(page.getByText('旧相册不存在')).not.toBeVisible()
+  await page.getByRole('link', { name: '查看第 2 张照片：旧楼连廊' }).click()
+  await expect(page.getByRole('heading', { name: '旧楼连廊' })).toBeVisible()
+  expect(albumReads).toBe(1)
+})
+
 test('管理员登录后写入数据库并可由公开 API 读取', async ({ page }, testInfo) => {
   const title = `数据库路径文章-${testInfo.project.name}`
   await page.goto('/admin/articles')
