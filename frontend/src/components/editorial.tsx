@@ -5,6 +5,7 @@ import {
 } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useContent } from "../domain/useContent";
+import { useImageGenerationCatalog } from "../plugins/ai-images/api";
 import type {
   Album,
   Article,
@@ -190,6 +191,7 @@ export function AdminShell({
   const navigate = useNavigate();
   const location = useLocation();
   const { owner, loadAdmin, logout, adminLoading, adminError } = useContent();
+  const { catalog: imageCatalog } = useImageGenerationCatalog(Boolean(owner));
   useEffect(() => {
     let active = true;
     void loadAdmin().then((result) => {
@@ -237,6 +239,7 @@ export function AdminShell({
               ["文章", "/admin/articles"],
               ["相册", "/admin/albums"],
               ["收藏", "/admin/collections"],
+              ...(imageCatalog?.enabled ? [["AI 生图", "/admin/ai-images"]] : []),
             ].map(([label, to]) => (
               <Link
                 key={to}

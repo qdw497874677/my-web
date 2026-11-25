@@ -8,9 +8,12 @@ import {Repository}from'./repository.js'
 import {hashPassword,verifyPassword}from'./security.js'
 import {LocalStorage,MemoryStorage,type StorageAdapter}from'./storage.js'
 import {DomainError,type AlbumInput,type ArticleInput,type CollectionInput,type CollectionPresentationInput}from'./types.js'
+import { aiImagesPlugin } from './plugins/ai-images/index.js'
+import { loadImageModels } from './plugins/ai-images/providers.js'
+import type { ImageModel } from './plugins/ai-images/contracts.js'
 
 export type App=FastifyInstance
-export interface AppOptions{databasePath?:string;uploadDir?:string;storage?:StorageAdapter;frontendOrigin?:string;cookieSecure?:boolean;sessionTtlDays?:number;nodeEnv?:string;nowProvider?:()=>Date;seed?:boolean;initializeOwner?:{email:string;password:string};rateLimit?:{loginMax?:number;subscriptionMax?:number;timeWindow?:number}|false}
+export interface AppOptions{databasePath?:string;uploadDir?:string;storage?:StorageAdapter;frontendOrigin?:string;cookieSecure?:boolean;sessionTtlDays?:number;nodeEnv?:string;nowProvider?:()=>Date;seed?:boolean;initializeOwner?:{email:string;password:string};rateLimit?:{loginMax?:number;subscriptionMax?:number;timeWindow?:number}|false;aiImageModels?:readonly ImageModel[]}
 type Json=Record<string,unknown>
 const params=(request:FastifyRequest)=>request.params as Record<string,string>
 const objectBody=(request:FastifyRequest):Json=>{if(!request.body||typeof request.body!=='object'||Array.isArray(request.body))throw new DomainError(400,'请求体必须是 JSON 对象');return request.body as Json}
@@ -25,12 +28,20 @@ const collectionInput=(request:FastifyRequest)=>{const body=objectBody(request),
 
 export async function buildApp(options:AppOptions={}):Promise<App>{
   const nodeEnv=options.nodeEnv??process.env.NODE_ENV??'development'
+  const frontendOrigin = options.frontendOrigin ?? process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173'
+  const aiImageModels = options.aiImageModels ?? loadImageModels()
+  if (aiImageModels.length) {
+    const origin = URL.parse(frontendOrigin)
+    if (!origin || !['http:', 'https:'].includes(origin.protocol) || origin.origin !== frontendOrigin) {
+      throw new Error('AI 生图要求 FRONTEND_ORIGIN 是完整的 HTTP(S) 源，不带末尾斜杠')
+    }
+  }
   const clock=options.nowProvider??(()=>new Date()),db=openDatabase(options.databasePath??process.env.DATABASE_PATH??'./data/linjian.sqlite')
   try{if(options.initializeOwner)await initializeOwner(db,options.initializeOwner.email,options.initializeOwner.password,clock());if(options.seed)seedContent(db,clock())}catch(error){db.close();throw error}
   if(nodeEnv!=='test'&&!hasOwner(db)){db.close();throw new Error('数据库尚未初始化所有者，请先运行 owner:init')}
   const repository=new Repository(db,clock),storage=options.storage??(options.uploadDir==='memory'?new MemoryStorage():new LocalStorage(options.uploadDir??process.env.UPLOAD_DIR??'./uploads')),dummyPasswordHash=await hashPassword('linjian-invalid-login-password')
   const app=Fastify({logger:false}),limitOptions=options.rateLimit===false?null:{loginMax:options.rateLimit?.loginMax??6,subscriptionMax:options.rateLimit?.subscriptionMax??10,timeWindow:options.rateLimit?.timeWindow??15*60*1000}
-  await app.register(cookie);await app.register(cors,{origin:options.frontendOrigin??process.env.FRONTEND_ORIGIN??'http://localhost:5173',credentials:true});await app.register(multipart,{limits:{fileSize:10*1024*1024,files:1}});if(limitOptions)await app.register(rateLimit,{global:false,max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,cache:5000})
+  await app.register(cookie);await app.register(cors,{origin:frontendOrigin,credentials:true});await app.register(multipart,{limits:{fileSize:10*1024*1024,files:1}});if(limitOptions)await app.register(rateLimit,{global:false,max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,cache:5000})
   app.addHook('onClose',async()=>repository.close())
   app.setErrorHandler((error,_request,reply)=>{if(error instanceof DomainError)return reply.code(error.statusCode).send({error:error.message});if((error as{validation?:unknown}).validation)return reply.code(400).send({error:'请求格式无效'});if((error as{code?:string}).code?.startsWith('SQLITE_CONSTRAINT'))return reply.code(409).send({error:'数据约束冲突'});const httpError=error as{statusCode?:number;message?:string},statusCode=httpError.statusCode;if(statusCode&&statusCode>=400&&statusCode<500)return reply.code(statusCode).send({error:httpError.message??'请求失败'});app.log.error(error);return reply.code(500).send({error:'服务器内部错误'})})
   const requireOwner=async(request:FastifyRequest,reply:FastifyReply)=>{const id=request.cookies.linjian_session;if(!id||!repository.ownerBySession(id))return reply.code(401).send({error:'需要刊物所有者会话'})}
@@ -38,6 +49,7 @@ export async function buildApp(options:AppOptions={}):Promise<App>{
   app.post('/api/auth/login',{config:{rateLimit:limitOptions?{max:limitOptions.loginMax,timeWindow:limitOptions.timeWindow,keyGenerator:(request:FastifyRequest)=>request.ip}:false}},async(request,reply)=>{const value=objectBody(request),email=stringField(value.email,'email')!.trim().toLowerCase(),password=stringField(value.password,'password')!,timestamp=clock().getTime(),owner=repository.ownerByEmail(email),passwordMatches=await verifyPassword(password,owner?String(owner.password_hash):dummyPasswordHash);if(!owner||!passwordMatches)throw new DomainError(401,'邮箱或密码不正确');const expires=new Date(timestamp+(options.sessionTtlDays??Number(process.env.SESSION_TTL_DAYS??30))*86400000),id=repository.createSession(String(owner.id),expires.toISOString()),secure=options.cookieSecure??(process.env.COOKIE_SECURE?process.env.COOKIE_SECURE==='true':nodeEnv==='production');reply.setCookie('linjian_session',id,{httpOnly:true,sameSite:'lax',secure,path:'/',expires});return{authenticated:true,owner:{id:owner.id,email:owner.email}}})
   app.post('/api/auth/logout',async(request,reply)=>{if(request.cookies.linjian_session)repository.deleteSession(request.cookies.linjian_session);reply.clearCookie('linjian_session',{path:'/'}).code(204).send()});app.get('/api/auth/session',async request=>{const owner=request.cookies.linjian_session?repository.ownerBySession(request.cookies.linjian_session):undefined;return owner?{authenticated:true,owner}:{authenticated:false}})
   app.register(async admin=>{admin.addHook('preHandler',requireOwner)
+    await admin.register(aiImagesPlugin, { prefix: '/ai-images', models: aiImageModels, trustedOrigin: frontendOrigin })
     admin.get('/categories',async()=>({items:repository.categories()}));admin.post('/categories',async(request,reply)=>reply.code(201).send(repository.createCategory(stringField(objectBody(request).name,'name')!)));admin.patch('/categories/:id',async request=>repository.updateCategory(params(request).id!,stringField(objectBody(request).name,'name')!));admin.put('/categories/order',async request=>({items:repository.orderCategories(stringArray(objectBody(request).ids,'ids'))}));admin.delete('/categories/:id',async(request,reply)=>{repository.deleteCategory(params(request).id!);reply.code(204).send()})
     admin.get('/articles',async()=>({items:repository.articles()}));admin.post('/articles',async(request,reply)=>reply.code(201).send(repository.createArticle(articleInput(request) as ArticleInput)));admin.get('/articles/:id',async request=>repository.getArticle(params(request).id!));admin.patch('/articles/:id',async request=>repository.updateArticle(params(request).id!,articleInput(request,true)));admin.post('/articles/:id/archive',async request=>repository.archiveArticle(params(request).id!,true));admin.post('/articles/:id/restore',async request=>repository.archiveArticle(params(request).id!,false))
     admin.get('/albums',async()=>({items:repository.albums()}));admin.post('/albums',async(request,reply)=>reply.code(201).send(repository.createAlbum(albumInput(request) as AlbumInput)));admin.get('/albums/:id',async request=>repository.getAlbum(params(request).id!));admin.patch('/albums/:id',async request=>repository.updateAlbum(params(request).id!,albumInput(request,true)));admin.post('/albums/:id/archive',async request=>repository.archiveAlbum(params(request).id!,true));admin.post('/albums/:id/restore',async request=>repository.archiveAlbum(params(request).id!,false))

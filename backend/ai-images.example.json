@@ -1,0 +1,36 @@
+{
+  "providers": [
+    {
+      "id": "openai",
+      "protocol": "openai-images",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "baseUrl": "https://api.openai.com/v1",
+      "models": [
+        {
+          "id": "openai-sunburst",
+          "label": "OpenAI · GPT Image 2.6 Sunburst",
+          "model": "gpt-image-2.6-sunburst",
+          "maxReferenceImages": 2,
+          "aspectRatios": ["1:1", "2:3", "3:2"],
+          "options": { "quality": "medium" }
+        }
+      ]
+    },
+    {
+      "id": "google",
+      "protocol": "gemini",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1",
+      "models": [
+        {
+          "id": "gemini-nano-banana",
+          "label": "Google · Gemini Nano Banana 2.1",
+          "model": "gemini-nano-banana-2.1",
+          "maxReferenceImages": 2,
+          "aspectRatios": ["1:1", "2:3", "3:2"],
+          "options": { "imageSize": "1K" }
+        }
+      ]
+    }
+  ]
+}

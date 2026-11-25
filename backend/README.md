@@ -28,6 +28,7 @@ npm run dev
 - `/api/admin/albums`：相册创建、读取、更新、归档与恢复
 - `/api/admin/albums/:id/photos`、`/api/admin/photos/:id`：照片创建、编辑、排序、移动、移除
 - `/api/admin/images`：multipart 上传、列表和引用保护删除
+- `GET /api/admin/ai-images/catalog`、`POST /api/admin/ai-images/generate`：可选的 [AI 生图插件](../docs/ai-images.md)
 - `GET/PUT /api/admin/featured`：精选目录、排序与可见性
 - `/api/public/articles`、`/api/public/albums`、`/api/public/featured`
 - `POST /api/public/subscriptions`

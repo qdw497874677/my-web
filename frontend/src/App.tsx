@@ -4,6 +4,7 @@ import { AdminAlbumsPage, AdminArticlesPage, DashboardPage, LoginPage } from "./
 import { AdminCollectionsPage } from "./pages/AdminCollectionsPage";
 import { CollectionsPage } from "./pages/CollectionsPage";
 import { ComponentsPage } from "./pages/ComponentsPage";
+import { AiImagesPage } from "./plugins/ai-images/AiImagesPage";
 import {
   AlbumDetailPage,
   AlbumsPage,
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/admin/articles" element={<AdminArticlesPage />} />
           <Route path="/admin/albums" element={<AdminAlbumsPage />} />
           <Route path="/admin/collections" element={<AdminCollectionsPage />} />
+          <Route path="/admin/ai-images" element={<AiImagesPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ContentProvider>

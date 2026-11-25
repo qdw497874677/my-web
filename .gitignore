@@ -23,3 +23,4 @@ backend/uploads/
 # Agent 工具缓存
 .omo/
 .codegraph
+.slim/deepwork/
