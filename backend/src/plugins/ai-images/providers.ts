@@ -43,7 +43,9 @@ interface ModelConfig {
   aspectRatios: AspectRatio[];
 }
 interface Adapter {
-  defaultBaseUrl: string;
+  defaultBaseUrl: string | undefined;
+  validateBaseUrl?(value: string): void;
+  validateModel?(model: ModelConfig): void;
   bind(
     provider: ProviderConfig,
     model: ModelConfig,
@@ -222,6 +224,59 @@ const sizes: Record<AspectRatio, string> = {
   "3:2": "1536x1024",
 };
 const adapters = {
+  "bailian-openai-images": {
+    // Bailian regions have different endpoints; the deployment must select one explicitly.
+    defaultBaseUrl: undefined,
+    validateBaseUrl(value) {
+      if (!new URL(value).pathname.endsWith("/compatible-mode/v1"))
+        throw new ImageConfigurationError();
+    },
+    validateModel({ model }) {
+      if (model !== "qwen-image-3.0-pro" && model !== "qwen-image-3.0")
+        throw new ImageConfigurationError();
+    },
+    bind(provider, model, rawOptions, fetcher) {
+      const options =
+        rawOptions === undefined ? {} : object(rawOptions, ["promptExtend", "watermark"], []);
+      const { promptExtend, watermark } = options;
+      if (
+        (promptExtend !== undefined && typeof promptExtend !== "boolean") ||
+        (watermark !== undefined && typeof watermark !== "boolean")
+      )
+        throw new ImageConfigurationError();
+      return async (input, signal) => {
+        const response = await fetcher(`${provider.baseUrl}/images/generations`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${provider.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: model.model,
+            prompt: input.prompt,
+            n: 1,
+            size: sizes[input.aspectRatio],
+            response_format: "b64_json",
+            ...(input.references.length
+              ? {
+                  image: input.references.map(
+                    (reference) =>
+                      `data:${reference.mimeType};base64,${reference.bytes.toString("base64")}`,
+                  ),
+                }
+              : {}),
+            ...(promptExtend !== undefined ? { prompt_extend: promptExtend } : {}),
+            ...(watermark !== undefined ? { watermark } : {}),
+          }),
+          signal,
+          redirect: "error",
+        });
+        const data = responseObject(await readJson(response, signal)).data;
+        if (!Array.isArray(data) || data.length === 0) throw new Error(UPSTREAM_ERROR);
+        return decodeImage(responseObject(data[0]).b64_json);
+      };
+    },
+  },
   "openai-images": {
     defaultBaseUrl: "https://api.openai.com/v1",
     bind(provider, model, rawOptions, fetcher) {
@@ -370,7 +425,7 @@ export function loadImageModels(
       if (typeof item.protocol !== "string" || !Object.hasOwn(adapters, item.protocol))
         throw new ImageConfigurationError();
       const protocol = item.protocol as Protocol;
-      const adapter = adapters[protocol];
+      const adapter: Adapter = adapters[protocol];
       context = "providers.apiKeyEnv";
       if (typeof item.apiKeyEnv !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item.apiKeyEnv))
         throw new ImageConfigurationError();
@@ -382,6 +437,7 @@ export function loadImageModels(
         baseUrl: baseUrl(item.baseUrl === undefined ? adapter.defaultBaseUrl : item.baseUrl),
         apiKey,
       };
+      adapter.validateBaseUrl?.(provider.baseUrl);
       context = "providers.models";
       if (!Array.isArray(item.models)) throw new ImageConfigurationError();
       for (const rawModel of item.models) {
@@ -421,6 +477,7 @@ export function loadImageModels(
           maxReferenceImages: entry.maxReferenceImages as number,
           aspectRatios: [...entry.aspectRatios] as AspectRatio[],
         };
+        adapter.validateModel?.(model);
         context = "providers.models.options";
         const generate = adapter.bind(provider, model, entry.options, fetcher);
         result.push({

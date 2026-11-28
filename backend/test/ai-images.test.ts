@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp, type App } from "../src/app.js";
 import { maxImageOutputBytes, type ImageModel } from "../src/plugins/ai-images/contracts.js";
@@ -184,6 +185,52 @@ describe("AI 图片接口", () => {
     });
     expect((await post([...fields("photo-illustration"), reference])).statusCode).toBe(200);
     expect(generate.mock.calls[1]![0].references).toEqual([{ bytes: png, mimeType: "image/png" }]);
+  });
+
+  it("loads the Bailian example and serves both Qwen generation modes through the owner API", async () => {
+    const configPath = fileURLToPath(new URL("../ai-images.bailian.example.json", import.meta.url));
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ data: [{ b64_json: png.toString("base64") }] }),
+    );
+    vi.stubEnv("AI_IMAGES_ENABLED", "true");
+    vi.stubEnv("AI_IMAGES_CONFIG", configPath);
+    vi.stubEnv("DASHSCOPE_API_KEY", "example-test-only-key");
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      app = await buildApp(appOptions);
+      expect(fetcher).not.toHaveBeenCalled();
+      await loginOwner();
+      const catalog = await app.inject({
+        url: "/api/admin/ai-images/catalog",
+        headers: { cookie },
+      });
+      expect(catalog.statusCode).toBe(200);
+      const modelId = "bailian-qwen-image-3-pro";
+      expect(catalog.json()).toMatchObject({
+        enabled: true,
+        models: [{ id: modelId, label: "百炼 · 千问图像 3.0 Pro" }],
+        templates: [
+          { id: "editorial-cover", modelIds: [modelId] },
+          { id: "photo-illustration", modelIds: [modelId] },
+          { id: "landscape-banner", modelIds: [modelId] },
+        ],
+      });
+      expect(catalog.body).not.toContain("example-test-only-key");
+      expect(catalog.body).not.toContain("maas.aliyuncs.com");
+      for (const parts of [
+        fields("editorial-cover", modelId),
+        [...fields("photo-illustration", modelId), reference],
+      ]) {
+        const result = await post(parts);
+        expect(result.statusCode).toBe(200);
+        expect(result.headers["content-type"]).toBe("image/png");
+        expect(result.rawPayload).toEqual(png);
+      }
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("rejects invalid origin, fields, images and incompatible pairs without dispatch", async () => {

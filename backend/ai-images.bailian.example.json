@@ -1,0 +1,19 @@
+{
+  "providers": [
+    {
+      "id": "bailian",
+      "protocol": "bailian-openai-images",
+      "apiKeyEnv": "DASHSCOPE_API_KEY",
+      "baseUrl": "https://your-workspace-id.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      "models": [
+        {
+          "id": "bailian-qwen-image-3-pro",
+          "label": "百炼 · 千问图像 3.0 Pro",
+          "model": "qwen-image-3.0-pro",
+          "maxReferenceImages": 2,
+          "aspectRatios": ["1:1", "2:3", "3:2"]
+        }
+      ]
+    }
+  ]
+}

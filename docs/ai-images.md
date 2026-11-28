@@ -12,6 +12,8 @@
 
 接入 MyCodex：将 [`ai-images.mycodex.example.json`](../backend/ai-images.mycodex.example.json) 复制为 `backend/data/ai-images.json`，把 `baseUrl` 换成自己的 MyCodex HTTPS API 基地址（包含 `/v1`），并在后端设置 `MYCODEX_API_KEY`。示例使用 `gpt-image-2`。
 
+接入阿里云百炼：参考 [`ai-images.bailian.example.json`](../backend/ai-images.bailian.example.json)，把百炼条目添加到现有的 `providers` 数组（可与 MyCodex 共存），或在没有现有配置时将示例复制为 `backend/data/ai-images.json`。示例为北京地域；将 `baseUrl` 改为账号所在地域的业务空间 HTTPS 基地址，保留 `/compatible-mode/v1`，并在后端设置同地域的 `DASHSCOPE_API_KEY`。重启后，「刊物封面」「照片插画」「横幅配图」都可选择示例中的 `qwen-image-3.0-pro`。
+
 插件只接受 PNG、JPEG、WebP 参考图，单张至多 5 MiB，每次至多两张，由模板指定确切数量。单进程同时只处理一次生成，且每十分钟至多发出六次生成请求；等待供应商响应最多 180 秒，没有自动重试。这些限制在重启时重置，不是供应商账单上限；超时的请求仍可能被供应商计费。
 
 若部署在反向代理后，请让生图接口的代理超时覆盖上传和生成耗时，避免代理在后端返回结果前断开连接。
@@ -30,9 +32,12 @@ AI_IMAGES_LIVE_MODEL_ID=mycodex-gpt-image-2 npm run test:e2e -- --project=deskto
 
 ## 配置与扩展
 
-- **添加模型或兼容供应商**：在本地 JSON 注册一个或多个 `providers`。每个供应商指定唯一 `id`、`protocol`、`apiKeyEnv` 和 `models`。`baseUrl` 可选，仅使用你信任的 HTTPS API 基地址，须包含 API 版本路径（原生 OpenAI 为 `https://api.openai.com/v1`，原生 Gemini 为 `https://generativelanguage.googleapis.com/v1`）。密钥会发到这个地址。
+- **添加模型或兼容供应商**：在本地 JSON 注册一个或多个 `providers`。每个供应商指定唯一 `id`、`protocol`、`apiKeyEnv` 和 `models`。原生 OpenAI 和 Gemini 有默认 `baseUrl`，百炼必须显式配置。只使用你信任的 HTTPS API 基地址，须包含 API 版本路径；密钥会发到这个地址。
 - **模型能力**：模型 `id` 在整份配置中唯一，`label` 是编辑部的显示名，`model` 是供应商型号字符串。`maxReferenceImages` 为 `0`、`1` 或 `2`；设为 `0` 即仅接受文字。`aspectRatios` 是非空列表，由 `1:1`、`2:3`、`3:2` 组成。按实际账户和型号填写；只有满足模板参考图数量和比例的模型才可选。
-- **协议与参数**：`openai-images` 协议适用于返回内联图片的 GPT Image 接口，文本生成发 JSON，参考图编辑发 multipart，分别走 `/images/generations`、`/images/edits`。三种比例映射到 `1024x1024`、`1024x1536`、`1536x1024`；可配 `options.quality` 为 `auto`、`low`、`medium` 或 `high`。`gemini` 走原生 `generateContent`，将参考图放在 `inline_data`，用 `imageConfig.aspectRatio` 传比例；支持时可配 `options.imageSize` 为 `1K`、`2K` 或 `4K`。参数是后端模型配置，不接受浏览器覆盖。
+- **协议与参数**：参数来自后端模型配置，不接受浏览器覆盖。
+  - `openai-images` 适用于返回内联图片的 GPT Image 接口，文本生成发 JSON，参考图编辑发 multipart，分别走 `/images/generations`、`/images/edits`。三种比例映射到 `1024x1024`、`1024x1536`、`1536x1024`；可配 `options.quality` 为 `auto`、`low`、`medium` 或 `high`。
+  - `gemini` 走原生 `generateContent`，将参考图放在 `inline_data`，用 `imageConfig.aspectRatio` 传比例；支持时可配 `options.imageSize` 为 `1K`、`2K` 或 `4K`。
+  - `bailian-openai-images` 走[百炼同步兼容接口](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)，仅支持能返回内联图像的 `qwen-image-3.0-pro` 和 `qwen-image-3.0`。文生图和参考图都发 JSON 到 `/images/generations`，有参考图时用 `image` 字段；比例映射与 GPT Image 相同。可选布尔参数 `options.promptExtend` 和 `options.watermark`，未设置则采用供应商默认值。此适配器不支持万相、异步任务或只返回临时链接的型号。
 - **新增模板**：在 [`templates.ts`](../backend/src/plugins/ai-images/templates.ts) 中增加模板，定义展示文案、后端提示词、成图比例及参考图数量。不需要修改前端或供应商协议。
 - **新增协议**：在后端插件的 [`providers.ts`](../backend/src/plugins/ai-images/providers.ts) 的 `adapters` 注册适配器。通过 `bind` 校验该协议的 `options` 并绑定到生成函数；生成函数负责请求参数映射，并把返回转换成 [`ImageModel`](../backend/src/plugins/ai-images/contracts.ts) 定义的内联图像。不跟随供应商返回的图片 URL；不需要修改公共配置加载器、编辑部界面、模板或刊物数据库。
 

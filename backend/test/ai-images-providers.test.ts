@@ -40,6 +40,15 @@ function config(protocol: "openai-images" | "gemini" = "openai-images") {
     ],
   };
 }
+function bailianConfig() {
+  const cfg = config();
+  Object.assign(cfg.providers[0]!, {
+    protocol: "bailian-openai-images",
+    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  });
+  Object.assign(cfg.providers[0]!.models[0]!, { model: "qwen-image-3.0-pro", options: {} });
+  return cfg;
+}
 function load(value: unknown, fetcher: typeof fetch) {
   const dir = mkdtempSync(join(tmpdir(), "image-provider-test-"));
   dirs.push(dir);
@@ -206,6 +215,124 @@ describe("image provider registry", () => {
     expect(form.get("quality")).toBe("high");
     expect(form.getAll("image[]")).toHaveLength(2);
     expect((form.getAll("image[]")[0] as File).type).toBe("image/png");
+  });
+
+  it("maps Qwen synchronous generations and ordered inline references to the same endpoint", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => json({ data: [{ b64_json: png.toString("base64") }] }));
+    const cfg = bailianConfig();
+    Object.assign(cfg.providers[0]!.models[0]!, {
+      options: { promptExtend: false, watermark: true },
+    });
+    const model = load(cfg, fetcher)[0]!;
+    const signal = new AbortController().signal;
+    expect(await model.generate(input, signal)).toEqual(image);
+    const [url, request] = fetcher.mock.calls[0]!;
+    expect(url).toBe("https://dashscope.aliyuncs.com/compatible-mode/v1/images/generations");
+    expect(request).toMatchObject({
+      method: "POST",
+      redirect: "error",
+      signal,
+      headers: { Authorization: "Bearer secret-key", "Content-Type": "application/json" },
+    });
+    expect(JSON.parse(request!.body as string)).toEqual({
+      model: "qwen-image-3.0-pro",
+      prompt: "draw",
+      n: 1,
+      size: "1024x1536",
+      response_format: "b64_json",
+      prompt_extend: false,
+      watermark: true,
+    });
+    const jpeg = { bytes: Buffer.from("ffd8ffe000000000", "hex"), mimeType: "image/jpeg" as const };
+    expect(
+      await model.generate({ ...input, aspectRatio: "3:2", references: [image, jpeg] }, signal),
+    ).toEqual(image);
+    expect(fetcher.mock.calls[1]![0]).toBe(url);
+    expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string)).toEqual({
+      model: "qwen-image-3.0-pro",
+      prompt: "draw",
+      n: 1,
+      size: "1536x1024",
+      response_format: "b64_json",
+      image: [
+        `data:image/png;base64,${png.toString("base64")}`,
+        `data:image/jpeg;base64,${jpeg.bytes.toString("base64")}`,
+      ],
+      prompt_extend: false,
+      watermark: true,
+    });
+  });
+
+  it("requires an explicit compatible-mode HTTPS URL, supported Qwen model and valid options", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => json({ data: [{ b64_json: png.toString("base64") }] }));
+    for (const model of ["qwen-image-3.0", "qwen-image-3.0-pro"]) {
+      for (const options of [undefined, {}, { promptExtend: true, watermark: false }]) {
+        const cfg = bailianConfig();
+        Object.assign(cfg.providers[0]!.models[0]!, { model, options });
+        await load(cfg, fetcher)[0]!.generate(input, new AbortController().signal);
+        const body = JSON.parse(fetcher.mock.calls.at(-1)![1]!.body as string);
+        if (options && "promptExtend" in options) {
+          expect(body).toMatchObject({ prompt_extend: true, watermark: false });
+        } else {
+          expect(body).not.toHaveProperty("prompt_extend");
+          expect(body).not.toHaveProperty("watermark");
+        }
+      }
+    }
+    for (const baseUrl of [
+      undefined,
+      "http://dashscope.aliyuncs.com/compatible-mode/v1",
+      "https://dashscope.aliyuncs.com/v1",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1/other",
+    ]) {
+      const cfg = bailianConfig();
+      Object.assign(cfg.providers[0]!, { baseUrl });
+      expect(() => load(cfg, fetcher)).toThrow(/^图片服务配置无效：providers\.baseUrl$/);
+    }
+    for (const model of ["qwen-image-plus", "qwen-image-3.0-flash", "other-model"]) {
+      const cfg = bailianConfig();
+      cfg.providers[0]!.models[0]!.model = model;
+      expect(() => load(cfg, fetcher)).toThrow(/^图片服务配置无效：providers\.models$/);
+    }
+    for (const options of [null, { promptExtend: "false" }, { watermark: 0 }, { surprise: true }]) {
+      const cfg = bailianConfig();
+      Object.assign(cfg.providers[0]!.models[0]!, { options });
+      expect(() => load(cfg, fetcher)).toThrow(/^图片服务配置无效：providers\.models\.options$/);
+    }
+  });
+
+  it("rejects Qwen URL-only, malformed and oversized responses without follow-up requests", async () => {
+    for (const payload of [
+      { data: [{ url: "https://example.com/secret-image.png" }] },
+      { data: [] },
+      { data: [{ b64_json: "%%%%" }] },
+      { data: [{ b64_json: Buffer.from("not an image").toString("base64") }] },
+      { data: [{ b64_json: "A".repeat((12 * 1024 * 1024 * 4) / 3 + 4) }] },
+    ]) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(payload));
+      const model = load(bailianConfig(), fetcher)[0]!;
+      await expect(model.generate(input, new AbortController().signal)).rejects.toThrow(
+        /^Image provider request failed$/,
+      );
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("enforces Qwen reference count and byte caps before fetching", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const model = load(bailianConfig(), fetcher)[0]!;
+    const bytes = Buffer.alloc(maxReferenceImageBytes + 1);
+    png.copy(bytes);
+    for (const references of [[image, image, image], [{ bytes, mimeType: "image/png" as const }]]) {
+      await expect(
+        model.generate({ ...input, references }, new AbortController().signal),
+      ).rejects.toThrow(/^Image provider request failed$/);
+    }
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("maps Gemini generateContent inline references and image options", async () => {
